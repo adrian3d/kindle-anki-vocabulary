@@ -1,0 +1,22 @@
+from calibre.customize import InterfaceActionBase
+
+
+class KindleVocabAnkiPlugin(InterfaceActionBase):
+    name = 'Kindle Vocab to Anki'
+    description = 'Vocabulaire et surlignages de la Kindle : filtres par langue, livre et date, traduction, export Anki et Markdown'
+    supported_platforms = ['windows', 'osx', 'linux']
+    author = 'Adrian Vaucoret'
+    version = (1, 0, 0)
+    minimum_calibre_version = (7, 0, 0)
+    actual_plugin = 'calibre_plugins.kindle_vocab_anki.action:KindleVocabAction'
+
+    def is_customizable(self):
+        return True
+
+    def config_widget(self):
+        from calibre_plugins.kindle_vocab_anki.config import ConfigWidget
+
+        return ConfigWidget()
+
+    def save_settings(self, config_widget):
+        config_widget.save_settings()
