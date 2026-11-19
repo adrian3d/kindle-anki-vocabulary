@@ -47,7 +47,20 @@ L'extraction de flashcards depuis les surlignages demande un modèle de langue :
 
 ## Installation
 
-Il faut calibre 7 ou plus récent.
+Il faut calibre 7 ou plus récent, et rien d'autre.
+
+1. Télécharger le fichier `kindle-vocab-anki-vX.Y.Z.zip` de la
+   [dernière version](https://github.com/adrian3d/kindle-anki-vocabulary/releases/latest), sans le décompresser.
+2. Dans calibre : Préférences → Extensions → « Charger une extension depuis un fichier », choisir ce fichier et
+   accepter l'avertissement de sécurité.
+3. Redémarrer calibre.
+4. Si le bouton « Vocabulaire Kindle » n'apparaît pas, l'ajouter : Préférences → Barres d'outils et menus → La
+   barre d'outils principale.
+
+Le ZIP proposé par le bouton « Code » de GitHub n'est pas installable tel quel : le plugin s'y trouve dans un
+sous-dossier.
+
+### Depuis les sources
 
 ```bash
 git clone https://github.com/adrian3d/kindle-anki-vocabulary.git
@@ -55,15 +68,15 @@ cd kindle-anki-vocabulary
 calibre-customize -b plugin
 ```
 
-Redémarrer calibre, puis ajouter le bouton « Vocabulaire Kindle » à la barre d'outils :
-Préférences → Barres d'outils et menus → La barre d'outils principale.
+### Publier une version
 
-Pour produire un fichier installable depuis l'interface de calibre (Préférences → Extensions → Charger une
-extension depuis un fichier) :
+Mettre à jour `version` dans `plugin/__init__.py`, puis pousser une étiquette du même numéro :
 
 ```bash
-cd plugin && zip -r ../kindle-vocab-anki.zip . -x '__pycache__/*'
+git tag v1.0.1 && git push origin v1.0.1
 ```
+
+GitHub Actions lance alors les tests, construit le fichier installable et publie la version.
 
 ## Utilisation
 
