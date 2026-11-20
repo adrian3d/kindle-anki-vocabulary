@@ -7,6 +7,12 @@ import urllib.request
 from contextlib import closing
 from dataclasses import dataclass
 
+try:
+    from calibre_plugins.kindle_vocab_anki.i18n import N_, _
+except ImportError:
+    # Hors de calibre, dans les tests, les modules du plugin s'importent sans le préfixe calibre_plugins.
+    from i18n import N_, _
+
 LANGUAGES = {
     'fr': 'French', 'en': 'English', 'es': 'Spanish', 'de': 'German', 'it': 'Italian',
     'pt': 'Portuguese', 'nl': 'Dutch', 'sv': 'Swedish', 'no': 'Norwegian', 'da': 'Danish',
@@ -78,11 +84,13 @@ def request_json(url, payload=None, headers=None, timeout=120, label='Service'):
             if error.code in RETRYABLE_STATUSES and attempt < MAX_ATTEMPTS:
                 time.sleep(float(error.headers.get('retry-after') or 2 ** attempt))
                 continue
-            raise TranslationError(f'{label} : HTTP {error.code} — {_error_message(body)}') from error
+            raise TranslationError(_('{service} : HTTP {code} — {message}').format(
+                service=_(label), code=error.code, message=_error_message(body))) from error
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
-            raise TranslationError(f'{label} : connexion impossible à {url} ({getattr(error, "reason", error)})') from error
+            raise TranslationError(_('{service} : connexion impossible à {url} ({error})').format(
+                service=_(label), url=url, error=getattr(error, 'reason', error))) from error
         except json.JSONDecodeError as error:
-            raise TranslationError(f'{label} : réponse illisible') from error
+            raise TranslationError(_('{service} : réponse illisible').format(service=_(label))) from error
 
 
 def _error_message(body):
@@ -120,9 +128,9 @@ def _parse_llm_json(raw_json, label):
     try:
         parsed = json.loads(raw_json)
     except (json.JSONDecodeError, TypeError) as error:
-        raise TranslationError(f'{label} : réponse JSON inattendue') from error
+        raise TranslationError(_('{service} : réponse JSON inattendue').format(service=_(label))) from error
     if not isinstance(parsed, dict):
-        raise TranslationError(f'{label} : réponse JSON inattendue')
+        raise TranslationError(_('{service} : réponse JSON inattendue').format(service=_(label)))
     return parsed
 
 
@@ -153,7 +161,7 @@ class ClaudeTranslator:
 
     def complete_json(self, system, user, schema, effort='low'):
         if not self.api_key:
-            raise TranslationError('Claude : clé d\'API manquante (Préférences du plugin)')
+            raise TranslationError(_('Claude : clé d\'API manquante (Préférences du plugin)'))
 
         headers = {'x-api-key': self.api_key, 'anthropic-version': ANTHROPIC_VERSION}
         payload = {
@@ -171,9 +179,9 @@ class ClaudeTranslator:
 
         stop_reason = response.get('stop_reason')
         if stop_reason == 'refusal':
-            raise TranslationError('Claude : requête refusée par le modèle')
+            raise TranslationError(_('Claude : requête refusée par le modèle'))
         if stop_reason == 'max_tokens':
-            raise TranslationError('Claude : réponse tronquée, réduisez la sélection')
+            raise TranslationError(_('Claude : réponse tronquée, réduisez la sélection'))
 
         text = next((block['text'] for block in response.get('content', []) if block.get('type') == 'text'), '')
         return _parse_llm_json(text, self.label)
@@ -207,7 +215,7 @@ class OllamaTranslator:
 
     def complete_json(self, system, user, schema, effort=None):
         if not self.model:
-            raise TranslationError('Ollama : aucun modèle choisi (Préférences du plugin)')
+            raise TranslationError(_('Ollama : aucun modèle choisi (Préférences du plugin)'))
 
         response = request_json(
             f'{self.base_url}/api/chat',
@@ -242,7 +250,7 @@ class DeepLTranslator:
 
     def translate(self, items, source, target):
         if not self.api_key:
-            raise TranslationError('DeepL : clé d\'API manquante (Préférences du plugin)')
+            raise TranslationError(_('DeepL : clé d\'API manquante (Préférences du plugin)'))
 
         result = {}
         for item in items:
@@ -266,7 +274,7 @@ class DeepLTranslator:
 
 
 class WiktionaryTranslator:
-    label = 'Wiktionnaire'
+    label = N_('Wiktionnaire')
     contextual = False
     batch_size = 200
     cache_id = 'wiktionary'
@@ -303,13 +311,12 @@ class WiktionaryTranslator:
         except urllib.error.HTTPError as error:
             _remove(partial_path)
             if error.code == 404:
-                raise TranslationError(
-                    f'Wiktionnaire : pas de dictionnaire {language_name(source)} → {language_name(target)}'
-                ) from error
-            raise TranslationError(f'Wiktionnaire : téléchargement impossible (HTTP {error.code})') from error
+                raise TranslationError(_('Wiktionnaire : pas de dictionnaire {source} → {target}').format(
+                    source=language_name(source), target=language_name(target))) from error
+            raise TranslationError(_('Wiktionnaire : téléchargement impossible (HTTP {code})').format(code=error.code)) from error
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as error:
             _remove(partial_path)
-            raise TranslationError(f'Wiktionnaire : téléchargement impossible ({error})') from error
+            raise TranslationError(_('Wiktionnaire : téléchargement impossible ({error})').format(error=error)) from error
         os.replace(partial_path, path)
 
     @staticmethod

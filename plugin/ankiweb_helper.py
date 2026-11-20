@@ -5,6 +5,11 @@ import sys
 import time
 
 
+def N_(text):
+    # Le processus d'AnkiWeb ne charge pas le plugin : ses messages sont traduits à l'arrivée, dans ankiweb.py.
+    return text
+
+
 def emit(**message):
     print(json.dumps(message, ensure_ascii=False), flush=True)
 
@@ -44,22 +49,22 @@ def export(request):
     col, auth = open_synced(request)
     try:
         before = col.note_count()
-        emit(step='Ajout des cartes…')
+        emit(step=N_('Ajout des cartes…'))
         col.import_anki_package(ImportAnkiPackageRequest(package_path=request['package'], options=ImportAnkiPackageOptions()))
         added = col.note_count() - before
 
-        emit(step='Envoi vers AnkiWeb…')
+        emit(step=N_('Envoi vers AnkiWeb…'))
         required = synchronize(col, auth)
         if required == 'FULL_UPLOAD':
             # Anki ne propose l'envoi complet d'office que lorsque le compte distant est vide.
             full_sync(col, auth, upload=True)
         elif required:
-            raise RuntimeError(
+            raise RuntimeError(N_(
                 'AnkiWeb demande une synchronisation complète, qui écraserait un côté. Rien n\'a été envoyé : '
                 'synchronisez d\'abord vos appareils, puis réessayez.'
-            )
+            ))
         if request.get('media'):
-            emit(step='Envoi des prononciations vers AnkiWeb…')
+            emit(step=N_('Envoi des prononciations vers AnkiWeb…'))
             sync_media(col, auth)
         return {'added': added, 'updated_or_existing': len(request.get('guids', [])) - added, 'endpoint': auth.endpoint,
                 'decks': deck_names(col)}
@@ -77,7 +82,7 @@ def open_synced(request):
     if request.get('endpoint'):
         auth.endpoint = request['endpoint']
     try:
-        emit(step='Récupération de la collection AnkiWeb…')
+        emit(step=N_('Récupération de la collection AnkiWeb…'))
         if synchronize(col, auth):
             # La copie locale ne sert que de relais : en cas de divergence, c'est AnkiWeb qui fait foi.
             full_sync(col, auth, upload=False)
@@ -104,8 +109,6 @@ def sync_media(col, auth):
         status = col.media_sync_status()
         if not status.active:
             return
-        if status.progress.checked:
-            emit(step=f'Envoi des prononciations vers AnkiWeb : {status.progress.checked}')
         time.sleep(0.5)
 
 
@@ -129,7 +132,7 @@ def describe(error):
     text = str(error) or type(error).__name__
     kind = getattr(getattr(error, 'kind', None), 'name', '') or type(error).__name__
     if 'AUTH' in kind.upper() or 'auth' in text.lower():
-        return 'AnkiWeb a refusé les identifiants. Reconnectez-vous.'
+        return N_('AnkiWeb a refusé les identifiants. Reconnectez-vous.')
     return text
 
 

@@ -7,6 +7,7 @@ from qt.core import QIcon
 
 from calibre_plugins.kindle_vocab_anki.config import prefs
 from calibre_plugins.kindle_vocab_anki.dialog import MainDialog
+from calibre_plugins.kindle_vocab_anki.i18n import _
 
 VOCAB_DB = os.path.join('system', 'vocabulary', 'vocab.db')
 CLIPPINGS = os.path.join('documents', 'My Clippings.txt')
@@ -14,7 +15,7 @@ CLIPPINGS = os.path.join('documents', 'My Clippings.txt')
 
 class KindleVocabAction(InterfaceAction):
     name = 'Kindle Vocab to Anki'
-    action_spec = ('Vocabulaire Kindle', None, 'Vocabulaire et surlignages de la Kindle vers Anki et Markdown', None)
+    action_spec = (_('Vocabulaire Kindle'), None, _('Vocabulaire et surlignages de la Kindle vers Anki et Markdown'), None)
 
     def genesis(self):
         self.qaction.setIcon(QIcon.ic('dictionary.png'))

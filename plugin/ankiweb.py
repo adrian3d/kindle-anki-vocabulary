@@ -10,6 +10,12 @@ import urllib.error
 import urllib.request
 import zipfile
 
+try:
+    from calibre_plugins.kindle_vocab_anki.i18n import _
+except ImportError:
+    # Hors de calibre, dans les tests, les modules du plugin s'importent sans le préfixe calibre_plugins.
+    from i18n import _
+
 PYPI_URL = 'https://pypi.org/pypi'
 ANKI = ('anki', '26.09.4')
 PURE_PACKAGES = (
@@ -77,7 +83,7 @@ class AnkiWeb:
         try:
             packages = (ANKI, *PURE_PACKAGES)
             for index, (name, version) in enumerate(packages, start=1):
-                on_step(f'Téléchargement des bibliothèques Anki ({index}/{len(packages)})…')
+                on_step(_('Téléchargement des bibliothèques Anki ({index}/{total})…').format(index=index, total=len(packages)))
                 suffix = f'{platform_tag()}.whl' if (name, version) == ANKI else 'none-any.whl'
                 zipfile.ZipFile(io.BytesIO(self._download(name, version, suffix))).extractall(partial)
             with open(os.path.join(partial, '.release'), 'w', encoding='utf-8') as file:
@@ -85,7 +91,7 @@ class AnkiWeb:
             shutil.rmtree(self.libraries, ignore_errors=True)
             os.replace(partial, self.libraries)
         except (OSError, zipfile.BadZipFile) as error:
-            raise AnkiWebError(f'Installation des bibliothèques Anki impossible : {error}') from error
+            raise AnkiWebError(_('Installation des bibliothèques Anki impossible : {error}').format(error=error)) from error
         finally:
             shutil.rmtree(partial, ignore_errors=True)
 
@@ -95,13 +101,14 @@ class AnkiWeb:
                 files = json.loads(response.read())['urls']
             wheel = next((file for file in files if file['filename'].endswith(suffix)), None)
             if wheel is None:
-                raise AnkiWebError(f'Aucune version de « {name} » pour ce système ({suffix}).')
+                raise AnkiWebError(_('Aucune version de « {name} » pour ce système ({platform}).').format(name=name, platform=suffix))
             with urllib.request.urlopen(wheel['url'], timeout=300) as response:
                 data = response.read()
         except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError, KeyError) as error:
-            raise AnkiWebError(f'Téléchargement de « {name} » impossible : {error}') from error
+            raise AnkiWebError(_('Téléchargement de « {name} » impossible : {error}').format(name=name, error=error)) from error
         if hashlib.sha256(data).hexdigest() != self.sha256.get(wheel['filename']):
-            raise AnkiWebError(f'Le fichier « {wheel["filename"]} » ne correspond pas à l\'empreinte attendue : installation annulée.')
+            raise AnkiWebError(_('Le fichier « {name} » ne correspond pas à l\'empreinte attendue : installation annulée.').format(
+                name=wheel['filename']))
         return data
 
     def login(self, username, password, endpoint=''):
@@ -118,7 +125,7 @@ class AnkiWeb:
 
     def _call(self, request, on_step=lambda message: None):
         if not self.is_installed():
-            raise AnkiWebError('Les bibliothèques Anki ne sont pas installées.')
+            raise AnkiWebError(_('Les bibliothèques Anki ne sont pas installées.'))
         helper = os.path.join(self.directory, 'helper.py')
         with open(helper, 'w', encoding='utf-8') as file:
             file.write(self.helper_source)
@@ -129,7 +136,7 @@ class AnkiWeb:
                 text=True, encoding='utf-8', errors='replace',
             )
         except OSError as error:
-            raise AnkiWebError(f'Lancement de la synchronisation impossible : {error}') from error
+            raise AnkiWebError(_('Lancement de la synchronisation impossible : {error}').format(error=error)) from error
 
         process.stdin.write(json.dumps({'collection': self.collection, 'libraries': self.libraries, **request}))
         process.stdin.close()
@@ -142,14 +149,14 @@ class AnkiWeb:
             if not isinstance(message, dict):
                 continue
             if 'step' in message:
-                on_step(message['step'])
+                on_step(_(message['step']))
             elif 'ok' in message:
                 result = message
         errors = process.stderr.read()
         process.wait()
 
         if result is None:
-            raise AnkiWebError(f'La synchronisation s\'est arrêtée sans réponse : {errors.strip()[-300:]}')
+            raise AnkiWebError(_('La synchronisation s\'est arrêtée sans réponse : {error}').format(error=errors.strip()[-300:]))
         if not result['ok']:
-            raise AnkiWebError(result['error'])
+            raise AnkiWebError(_(result['error']))
         return result

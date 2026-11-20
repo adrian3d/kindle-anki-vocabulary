@@ -13,6 +13,7 @@ from qt.core import (
 )
 
 from calibre_plugins.kindle_vocab_anki import ankiweb, apkg, clippings, flashcards, phone, translators, vocab
+from calibre_plugins.kindle_vocab_anki.i18n import N_, _, language_label
 from calibre_plugins.kindle_vocab_anki.config import (
     LLM_PROVIDERS, PROVIDERS, make_ankiweb, make_cache, make_pronunciations, make_translator, prefs,
 )
@@ -23,13 +24,13 @@ READ_ONLY = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
 KEY_ROLE = Qt.ItemDataRole.UserRole
 
 COL_CHECK, COL_WORD, COL_STEM, COL_TRANSLATION, COL_DATE, COL_BOOK, COL_USAGE = range(7)
-VOCAB_COLUMNS = ('', 'Mot', 'Forme de base', 'Traduction', 'Ajouté le', 'Livre', 'Phrase')
-HIGHLIGHT_COLUMNS = ('', 'Date', 'Livre', 'Référence', 'Texte', 'Note')
+VOCAB_COLUMNS = ('', N_('Mot'), N_('Forme de base'), N_('Traduction'), N_('Ajouté le'), N_('Livre'), N_('Phrase'))
+HIGHLIGHT_COLUMNS = ('', N_('Date'), N_('Livre'), N_('Référence'), N_('Texte'), N_('Note'))
 HIGHLIGHT_CHECK, HIGHLIGHT_TEXT = 0, 4
-CARD_COLUMNS = ('', 'Type', 'Recto', 'Verso', 'Remarque', 'Passage')
+CARD_COLUMNS = ('', N_('Type'), N_('Recto'), N_('Verso'), N_('Remarque'), N_('Passage'))
 CARD_CHECK, CARD_KIND, CARD_FRONT, CARD_BACK, CARD_NOTE, CARD_SENTENCE = range(6)
-KIND_LABELS = {'vocabulary': 'Vocabulaire', 'expression': 'Tournure'}
-EXPORT_FORMATS = (('apkg', 'Paquet Anki (.apkg)'), ('csv', 'CSV pour Anki (.csv)'))
+KIND_LABELS = {'vocabulary': N_('Vocabulaire'), 'expression': N_('Tournure')}
+EXPORT_FORMATS = (('apkg', N_('Paquet Anki (.apkg)')), ('csv', N_('CSV pour Anki (.csv)')))
 
 
 class SourceRow(QWidget):
@@ -40,8 +41,8 @@ class SourceRow(QWidget):
         self.dialog_name, self.file_filter = dialog_name, file_filter
         self.path = QLineEdit(path)
         self.path.setReadOnly(True)
-        self.path.setPlaceholderText('Branchez la Kindle ou choisissez le fichier')
-        browse = QPushButton('Parcourir…')
+        self.path.setPlaceholderText(_('Branchez la Kindle ou choisissez le fichier'))
+        browse = QPushButton(_('Parcourir…'))
         browse.clicked.connect(self.browse)
 
         layout = QHBoxLayout(self)
@@ -51,7 +52,7 @@ class SourceRow(QWidget):
         layout.addWidget(browse)
 
     def browse(self):
-        files = choose_files(self, self.dialog_name, 'Choisir le fichier', filters=[self.file_filter], select_only_single_file=True)
+        files = choose_files(self, self.dialog_name, _('Choisir le fichier'), filters=[self.file_filter], select_only_single_file=True)
         if files:
             self.path.setText(files[0])
             self.changed.emit(files[0])
@@ -65,8 +66,8 @@ class DateRange(QWidget):
         self.latest, self.calendars = None, []
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.start_enabled, self.start = self._add_bound(layout, 'Du')
-        self.end_enabled, self.end = self._add_bound(layout, 'Au')
+        self.start_enabled, self.start = self._add_bound(layout, _('Du'))
+        self.end_enabled, self.end = self._add_bound(layout, _('Au'))
 
     def _add_bound(self, layout, label):
         enabled, edit = QCheckBox(label), QDateEdit(QDate.currentDate())
@@ -112,7 +113,7 @@ class DateRange(QWidget):
 
 def make_table(columns, stretch_column):
     table = QTableWidget(0, len(columns))
-    table.setHorizontalHeaderLabels(columns)
+    table.setHorizontalHeaderLabels([_(column) for column in columns])
     table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     table.setAlternatingRowColors(True)
     table.verticalHeader().setVisible(False)
@@ -128,6 +129,13 @@ def busy_cursor():
         yield
     finally:
         QApplication.restoreOverrideCursor()
+
+
+def make_close_buttons():
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+    # Qt traduit ses boutons standard dans la langue de calibre, qui peut différer de celle choisie pour le plugin.
+    buttons.button(QDialogButtonBox.StandardButton.Close).setText(_('Fermer'))
+    return buttons
 
 
 def make_cell(text, flags=READ_ONLY):
@@ -163,7 +171,7 @@ class TaskWorker(QThread):
         except (phone.PhoneError, ankiweb.AnkiWebError, OSError) as exception:
             error = str(exception)
         except Exception as exception:
-            error = f'Erreur inattendue : {exception}'
+            error = _('Erreur inattendue : {error}').format(error=exception)
         self.done.emit(result, error)
 
 
@@ -174,7 +182,7 @@ def write_package(path, deck, notes, reverse, audio, on_step):
     pronunciations = make_pronunciations()
     files = pronunciations.fetch_all(
         ((note.word, note.lang) for note in notes if not note.passage),
-        lambda done, total: on_step(f'Prononciations Wiktionary : {done}/{total}…'),
+        lambda done, total: on_step(_('Prononciations Wiktionary : {done}/{total}…').format(done=done, total=total)),
     )
     notes = [replace(note, audio=files.get((note.word, note.lang), '')) for note in notes]
     apkg.write_apkg(path, deck, notes, reverse, media_dir=pronunciations.directory)
@@ -195,12 +203,12 @@ class DeckChooser(QGroupBox):
     changed = pyqtSignal()
 
     def __init__(self, existing_label):
-        super().__init__('Deck de destination')
+        super().__init__(_('Deck de destination'))
         self.existing_choice = QRadioButton(existing_label)
         self.existing_deck = QComboBox()
-        self.new_choice = QRadioButton('Créer un nouveau deck nommé :')
+        self.new_choice = QRadioButton(_('Créer un nouveau deck nommé :'))
         self.new_deck = QLineEdit(prefs['deck_name'])
-        self.new_deck.setPlaceholderText('Par exemple : Anglais::Siege and Storm (« :: » crée un sous-deck)')
+        self.new_deck.setPlaceholderText(_('Par exemple : Anglais::Siege and Storm (« :: » crée un sous-deck)'))
         self.new_choice.setChecked(True)
         self.existing_choice.toggled.connect(self.on_changed)
         self.existing_deck.currentIndexChanged.connect(lambda _index: self.changed.emit())
@@ -240,18 +248,18 @@ class SendDialog(QDialog):
     def __init__(self, parent, notes, skipped, reverse_allowed, audio, destination, existing_label):
         super().__init__(parent)
         self.notes, self.worker, self.reverse_allowed, self.audio = notes, None, reverse_allowed, audio
-        self.setWindowTitle(self.title)
+        self.setWindowTitle(_(self.title))
         self.setMinimumWidth(580)
 
-        summary = f'{len(notes)} note(s) à envoyer vers {destination}.'
+        summary = _('{count} note(s) à envoyer vers {destination}.').format(count=len(notes), destination=_(destination))
         if skipped:
-            summary += f' {skipped} ligne(s) cochée(s) sans contenu exportable sont laissées de côté.'
+            summary += ' ' + _('{count} ligne(s) cochée(s) sans contenu exportable sont laissées de côté.').format(count=skipped)
         self.summary = QLabel(summary)
         self.summary.setWordWrap(True)
 
-        self.chooser = DeckChooser(existing_label)
+        self.chooser = DeckChooser(_(existing_label))
         self.chooser.changed.connect(self.update_state)
-        self.reverse = QCheckBox('Cartes dans les deux sens')
+        self.reverse = QCheckBox(_('Cartes dans les deux sens'))
         self.reverse.setChecked(prefs['reverse'] and reverse_allowed)
         self.reverse.setVisible(reverse_allowed)
 
@@ -262,10 +270,10 @@ class SendDialog(QDialog):
         self.busy_bar.setMaximumWidth(120)
         self.busy_bar.setTextVisible(False)
         self.busy_bar.hide()
-        self.send_button = QPushButton('Envoyer')
+        self.send_button = QPushButton(_('Envoyer'))
         self.send_button.setDefault(True)
         self.send_button.clicked.connect(self.send)
-        close = QPushButton('Fermer')
+        close = QPushButton(_('Fermer'))
         close.clicked.connect(self.reject)
         self.buttons = QHBoxLayout()
         self.buttons.addWidget(self.progress, 1)
@@ -282,18 +290,18 @@ class SendDialog(QDialog):
     def update_state(self):
         self.send_button.setEnabled(self.can_send() and bool(self.chooser.deck_name()) and not self.busy())
 
-    def run(self, task, on_done, message='Opération en cours…'):
+    def run(self, task, on_done, message=N_('Opération en cours…')):
         self.worker = TaskWorker(task)
         self.worker.step.connect(self.progress.setText)
         self.worker.done.connect(lambda result, error: self.finish(result, error, on_done))
-        self.progress.setText(message)
+        self.progress.setText(_(message))
         self.busy_bar.show()
         self.worker.start()
         self.update_state()
 
     def finish(self, result, error, on_done):
         self.busy_bar.hide()
-        self.progress.setText(f'Échec : {error}' if error else '')
+        self.progress.setText(_('Échec : {error}').format(error=error) if error else '')
         if not error:
             on_done(result)
         self.update_state()
@@ -305,21 +313,21 @@ class SendDialog(QDialog):
 
     def reject(self):
         if self.busy():
-            self.progress.setText('Opération en cours : patientez avant de fermer.')
+            self.progress.setText(_('Opération en cours : patientez avant de fermer.'))
             return
         super().reject()
 
 
 class PhoneDialog(SendDialog):
-    title = 'Envoyer au téléphone'
+    title = N_('Envoyer au téléphone')
 
     def __init__(self, parent, notes, skipped, reverse_allowed=True, audio=False):
-        super().__init__(parent, notes, skipped, reverse_allowed, audio, 'AnkiDroid, par le câble USB',
-                         'Ajouter à un deck existant du téléphone :')
+        super().__init__(parent, notes, skipped, reverse_allowed, audio, N_('AnkiDroid, par le câble USB'),
+                         N_('Ajouter à un deck existant du téléphone :'))
         self.connected = False
         self.phone_status = QLabel('')
         self.phone_status.setWordWrap(True)
-        self.refresh_button = QPushButton('Actualiser')
+        self.refresh_button = QPushButton(_('Actualiser'))
         self.refresh_button.clicked.connect(self.load_decks)
         phone_row = QHBoxLayout()
         phone_row.addWidget(self.phone_status, 1)
@@ -344,25 +352,25 @@ class PhoneDialog(SendDialog):
         if self.busy():
             return
         self.connected = False
-        self.phone_status.setText('Recherche du téléphone…')
+        self.phone_status.setText(_('Recherche du téléphone…'))
 
         def task(on_step):
             try:
                 device = phone.connect()
-                on_step('Lecture des decks d\'AnkiDroid…')
+                on_step(_('Lecture des decks d\'AnkiDroid…'))
                 return device.serial, device.list_decks(), ''
             except phone.PhoneError as error:
                 return None, [], str(error)
 
-        self.run(task, self.on_decks, 'Recherche du téléphone…')
+        self.run(task, self.on_decks, N_('Recherche du téléphone…'))
 
     def on_decks(self, result):
         serial, decks, error = result
         self.connected = serial is not None
         if self.connected:
-            self.phone_status.setText(f'Téléphone {serial} connecté, {len(decks)} deck(s) dans AnkiDroid.')
+            self.phone_status.setText(_('Téléphone {serial} connecté, {count} deck(s) dans AnkiDroid.').format(serial=serial, count=len(decks)))
         else:
-            self.phone_status.setText(f'Téléphone non disponible. {error}')
+            self.phone_status.setText(_('Téléphone non disponible. {error}').format(error=error))
         self.chooser.set_decks(decks)
 
     def send(self):
@@ -373,47 +381,47 @@ class PhoneDialog(SendDialog):
                 deck, self.notes, reverse, self.audio, on_step,
                 lambda path, _has_media: phone.connect().send_package(path, on_step)),
             lambda outcome: self.on_sent(deck, outcome),
-            'Préparation du paquet…',
+            N_('Préparation du paquet…'),
         )
 
     def on_sent(self, deck, outcome):
         if outcome == phone.NEEDS_CONFIRMATION:
-            self.progress.setText('Le paquet est ouvert dans AnkiDroid, mais la validation automatique n\'a pas abouti : '
-                                  'confirmez l\'import sur le téléphone.')
+            self.progress.setText(_('Le paquet est ouvert dans AnkiDroid, mais la validation automatique n\'a pas abouti : '
+                                    'confirmez l\'import sur le téléphone.'))
         else:
-            self.progress.setText(f'{len(self.notes)} note(s) importée(s) dans le deck « {deck} » du téléphone.')
+            self.progress.setText(_('{count} note(s) importée(s) dans le deck « {deck} » du téléphone.').format(count=len(self.notes), deck=deck))
 
 
 class AnkiWebDialog(SendDialog):
-    title = 'Envoyer vers AnkiWeb'
+    title = N_('Envoyer vers AnkiWeb')
 
     def __init__(self, parent, notes, skipped, reverse_allowed=True, audio=False):
-        super().__init__(parent, notes, skipped, reverse_allowed, audio, 'votre compte AnkiWeb, directement depuis cet ordinateur',
-                         'Ajouter à un deck existant du compte :')
+        super().__init__(parent, notes, skipped, reverse_allowed, audio, N_('votre compte AnkiWeb, directement depuis cet ordinateur'),
+                         N_('Ajouter à un deck existant du compte :'))
         self.client = make_ankiweb()
 
         self.account_status = QLabel('')
         self.account_status.setWordWrap(True)
         self.username = QLineEdit(prefs['ankiweb_user'])
-        self.username.setPlaceholderText('Adresse e-mail du compte AnkiWeb')
+        self.username.setPlaceholderText(_('Adresse e-mail du compte AnkiWeb'))
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password.setPlaceholderText('Mot de passe (non conservé)')
+        self.password.setPlaceholderText(_('Mot de passe (non conservé)'))
         self.password.returnPressed.connect(self.login)
-        self.login_button, self.logout_button = QPushButton('Se connecter'), QPushButton('Se déconnecter')
+        self.login_button, self.logout_button = QPushButton(_('Se connecter')), QPushButton(_('Se déconnecter'))
         self.login_button.clicked.connect(self.login)
         self.logout_button.clicked.connect(self.logout)
         credentials = QHBoxLayout()
         for widget, stretch in ((self.username, 2), (self.password, 2), (self.login_button, 0), (self.logout_button, 0)):
             credentials.addWidget(widget, stretch)
-        account = QGroupBox('Compte AnkiWeb')
+        account = QGroupBox(_('Compte AnkiWeb'))
         account_layout = QVBoxLayout(account)
         account_layout.addWidget(self.account_status)
         account_layout.addLayout(credentials)
 
-        notice = QLabel('Les cartes sont ajoutées à votre collection en ligne ; vos appareils les reçoivent à leur prochaine '
-                        'synchronisation. Au premier usage, le plugin télécharge une fois les bibliothèques officielles Anki '
-                        '(environ 12 Mo) dans son dossier de données ; rien d\'autre n\'est à installer.')
+        notice = QLabel(_('Les cartes sont ajoutées à votre collection en ligne ; vos appareils les reçoivent à leur prochaine '
+                          'synchronisation. Au premier usage, le plugin télécharge une fois les bibliothèques officielles Anki '
+                          '(environ 12 Mo) dans son dossier de données ; rien d\'autre n\'est à installer.'))
         notice.setWordWrap(True)
 
         layout = QVBoxLayout(self)
@@ -423,7 +431,7 @@ class AnkiWebDialog(SendDialog):
 
         self.update_state()
         if prefs['ankiweb_hkey']:
-            self.run(lambda on_step: self.client.list_decks(self.account(), on_step), self.on_decks, 'Connexion à AnkiWeb…')
+            self.run(lambda on_step: self.client.list_decks(self.account(), on_step), self.on_decks, N_('Connexion à AnkiWeb…'))
 
     def account(self):
         return {'hkey': prefs['ankiweb_hkey'], 'endpoint': prefs['ankiweb_endpoint']}
@@ -434,7 +442,7 @@ class AnkiWebDialog(SendDialog):
     def update_state(self):
         super().update_state()
         logged_in, idle = bool(prefs['ankiweb_hkey']), not self.busy()
-        self.account_status.setText(f'Connecté en tant que {prefs["ankiweb_user"]}.' if logged_in else 'Non connecté.')
+        self.account_status.setText(_('Connecté en tant que {user}.').format(user=prefs['ankiweb_user']) if logged_in else _('Non connecté.'))
         for widget in (self.username, self.password, self.login_button):
             widget.setVisible(not logged_in)
             widget.setEnabled(idle)
@@ -444,18 +452,18 @@ class AnkiWebDialog(SendDialog):
     def login(self):
         username, password = self.username.text().strip(), self.password.text()
         if not username or not password:
-            self.progress.setText('Saisissez l\'adresse e-mail et le mot de passe du compte AnkiWeb.')
+            self.progress.setText(_('Saisissez l\'adresse e-mail et le mot de passe du compte AnkiWeb.'))
             return
 
         def task(on_step):
             if not self.client.is_installed():
                 self.client.install(on_step)
-            on_step('Connexion à AnkiWeb…')
+            on_step(_('Connexion à AnkiWeb…'))
             login = self.client.login(username, password, prefs['ankiweb_endpoint'])
             account = {'hkey': login['hkey'], 'endpoint': login['endpoint']}
             return username, account, self.client.list_decks(account, on_step)
 
-        self.run(task, self.on_logged_in, 'Connexion à AnkiWeb…')
+        self.run(task, self.on_logged_in, N_('Connexion à AnkiWeb…'))
 
     def on_logged_in(self, result):
         username, account, decks = result
@@ -466,7 +474,7 @@ class AnkiWebDialog(SendDialog):
     def on_decks(self, result):
         prefs['ankiweb_endpoint'] = result.get('endpoint') or prefs['ankiweb_endpoint']
         self.chooser.set_decks(result['decks'])
-        self.progress.setText(f'{len(result["decks"])} deck(s) dans la collection AnkiWeb.')
+        self.progress.setText(_('{count} deck(s) dans la collection AnkiWeb.').format(count=len(result['decks'])))
 
     def logout(self):
         prefs['ankiweb_hkey'] = ''
@@ -483,16 +491,16 @@ class AnkiWebDialog(SendDialog):
                 deck, self.notes, reverse, self.audio, on_step,
                 lambda path, has_media: self.client.export(account, path, on_step, has_media)),
             lambda result: self.on_sent(deck, result),
-            'Préparation du paquet…',
+            N_('Préparation du paquet…'),
         )
 
     def on_sent(self, deck, result):
         self.on_decks(result)
         existing = len(self.notes) - result['added']
-        message = f'{result["added"]} nouvelle(s) note(s) ajoutée(s) au deck « {deck} » sur AnkiWeb.'
+        message = _('{count} nouvelle(s) note(s) ajoutée(s) au deck « {deck} » sur AnkiWeb.').format(count=result['added'], deck=deck)
         if existing:
-            message += f' {existing} y figuraient déjà.'
-        self.progress.setText(message + ' Synchronisez AnkiDroid pour les recevoir.')
+            message += ' ' + _('{count} y figuraient déjà.').format(count=existing)
+        self.progress.setText(message + ' ' + _('Synchronisez AnkiDroid pour les recevoir.'))
 
 class ExportBar(QWidget):
     def __init__(self, collect_notes, reverse_allowed=True, audio_allowed=True):
@@ -501,31 +509,31 @@ class ExportBar(QWidget):
         self.deck = QLineEdit(prefs['deck_name'])
         self.format = QComboBox()
         for key, label in EXPORT_FORMATS:
-            self.format.addItem(label, key)
+            self.format.addItem(_(label), key)
         self.format.setCurrentIndex(max(self.format.findData(prefs['export_format']), 0))
-        self.reverse = QCheckBox('Cartes dans les deux sens')
+        self.reverse = QCheckBox(_('Cartes dans les deux sens'))
         self.reverse.setChecked(prefs['reverse'] and reverse_allowed)
         self.reverse.setVisible(reverse_allowed)
-        self.reverse.setToolTip('Paquet .apkg uniquement : en CSV, le sens des cartes dépend du type de note choisi dans Anki.')
-        self.audio = QCheckBox('Prononciation')
+        self.reverse.setToolTip(_('Paquet .apkg uniquement : en CSV, le sens des cartes dépend du type de note choisi dans Anki.'))
+        self.audio = QCheckBox(_('Prononciation'))
         self.audio.setChecked(prefs['audio'] and audio_allowed)
         self.audio.setVisible(audio_allowed)
-        self.audio.setToolTip('Paquet .apkg, téléphone et AnkiWeb : enregistrement de Wiktionary quand il existe, '
-                              'sinon voix de synthèse de l\'appareil qui affiche la carte.')
+        self.audio.setToolTip(_('Paquet .apkg, téléphone et AnkiWeb : enregistrement de Wiktionary quand il existe, '
+                                'sinon voix de synthèse de l\'appareil qui affiche la carte.'))
         self.format.currentIndexChanged.connect(self.on_format_changed)
         self.on_format_changed()
-        export = QPushButton('Exporter…')
+        export = QPushButton(_('Exporter…'))
         export.clicked.connect(self.export)
-        send = QPushButton('Envoyer au téléphone…')
-        send.setToolTip('Ouvre une fenêtre pour choisir le deck sur le téléphone et lancer l\'envoi par USB.')
+        send = QPushButton(_('Envoyer au téléphone…'))
+        send.setToolTip(_('Ouvre une fenêtre pour choisir le deck sur le téléphone et lancer l\'envoi par USB.'))
         send.clicked.connect(lambda: self.open_send_dialog(PhoneDialog))
-        send_ankiweb = QPushButton('Envoyer vers AnkiWeb…')
-        send_ankiweb.setToolTip('Ouvre une fenêtre pour envoyer les cartes dans votre compte AnkiWeb, sans passer par le téléphone.')
+        send_ankiweb = QPushButton(_('Envoyer vers AnkiWeb…'))
+        send_ankiweb.setToolTip(_('Ouvre une fenêtre pour envoyer les cartes dans votre compte AnkiWeb, sans passer par le téléphone.'))
         send_ankiweb.clicked.connect(lambda: self.open_send_dialog(AnkiWebDialog))
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        widgets = ((QLabel('Exporter dans un fichier : deck'), 0), (self.deck, 1), (self.format, 0), (self.reverse, 0),
+        widgets = ((QLabel(_('Exporter dans un fichier : deck')), 0), (self.deck, 1), (self.format, 0), (self.reverse, 0),
                    (self.audio, 0), (export, 0), (send, 0), (send_ankiweb, 0))
         for widget, stretch in widgets:
             layout.addWidget(widget, stretch)
@@ -536,10 +544,10 @@ class ExportBar(QWidget):
     def export(self):
         (notes, skipped), deck, file_format = self.collect_notes(), self.deck.text().strip(), self.format.currentData()
         if not notes or not deck:
-            error_dialog(self, 'Export Anki',
-                         'Rien à exporter : il faut un nom de deck et au moins une ligne cochée exportable.', show=True)
+            error_dialog(self, _('Export Anki'),
+                         _('Rien à exporter : il faut un nom de deck et au moins une ligne cochée exportable.'), show=True)
             return
-        path = choose_save_file(self, f'kindle-vocab-anki-export-{file_format}', 'Exporter pour Anki',
+        path = choose_save_file(self, f'kindle-vocab-anki-export-{file_format}', _('Exporter pour Anki'),
                                 filters=[(self.format.currentText(), [file_format])],
                                 initial_filename=f'{deck}.{file_format}')
         if not path:
@@ -548,12 +556,12 @@ class ExportBar(QWidget):
             try:
                 apkg.write_csv(path, deck, notes)
             except OSError as error:
-                error_dialog(self, 'Export Anki', f'Écriture impossible : {error}', show=True)
+                error_dialog(self, _('Export Anki'), _('Écriture impossible : {error}').format(error=error), show=True)
                 return
             self.on_exported(path, deck, file_format, len(notes), skipped)
             return
 
-        progress = QProgressDialog('Préparation du paquet…', '', 0, 0, self)
+        progress = QProgressDialog(_('Préparation du paquet…'), '', 0, 0, self)
         progress.setCancelButton(None)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
@@ -566,17 +574,17 @@ class ExportBar(QWidget):
     def on_package_written(self, progress, error, path, deck, count, skipped):
         progress.reset()
         if error:
-            error_dialog(self, 'Export Anki', f'Écriture impossible : {error}', show=True)
+            error_dialog(self, _('Export Anki'), _('Écriture impossible : {error}').format(error=error), show=True)
             return
         self.on_exported(path, deck, 'apkg', count, skipped)
 
     def on_exported(self, path, deck, file_format, count, skipped):
         prefs['deck_name'], prefs['export_format'] = deck, file_format
         self.remember_options()
-        message = f'{count} note(s) exportée(s) dans {path}.'
+        message = _('{count} note(s) exportée(s) dans {path}.').format(count=count, path=path)
         if skipped:
-            message += f'\n{skipped} ligne(s) cochée(s) sans contenu exportable ont été ignorée(s).'
-        info_dialog(self, 'Export Anki', message, show=True)
+            message += '\n' + _('{count} ligne(s) cochée(s) sans contenu exportable ont été ignorée(s).').format(count=skipped)
+        info_dialog(self, _('Export Anki'), message, show=True)
 
     def remember_options(self):
         if self.reverse_allowed:
@@ -587,7 +595,7 @@ class ExportBar(QWidget):
     def open_send_dialog(self, dialog_class):
         notes, skipped = self.collect_notes()
         if not notes:
-            error_dialog(self, dialog_class.title, 'Rien à envoyer : cochez au moins une ligne exportable.', show=True)
+            error_dialog(self, _(dialog_class.title), _('Rien à envoyer : cochez au moins une ligne exportable.'), show=True)
             return
         if self.audio_allowed:
             prefs['audio'] = self.audio.isChecked()
@@ -618,16 +626,16 @@ class TranslateWorker(QThread):
         except translators.TranslationError as exception:
             error = str(exception)
         except Exception as exception:
-            error = f'Erreur inattendue : {exception}'
+            error = _('Erreur inattendue : {error}').format(error=exception)
         self.done.emit(result, error)
 
     def prepare(self, lang):
         dictionary_path = getattr(self.translator, 'dictionary_path', None)
         if dictionary_path and not os.path.exists(dictionary_path(lang, self.target)):
-            self.step.emit(f'Téléchargement du dictionnaire {translators.language_name(lang)} → '
-                           f'{translators.language_name(self.target)}…')
+            self.step.emit(_('Téléchargement du dictionnaire {source} → {target}…').format(
+                source=language_label(translators.language_name(lang)), target=language_label(translators.language_name(self.target))))
             self.translator.download(lang, self.target)
-        self.step.emit('Traduction en cours…')
+        self.step.emit(_('Traduction en cours…'))
 
 
 class ExtractWorker(QThread):
@@ -649,7 +657,7 @@ class ExtractWorker(QThread):
         except translators.TranslationError as exception:
             error = str(exception)
         except Exception as exception:
-            error = f'Erreur inattendue : {exception}'
+            error = _('Erreur inattendue : {error}').format(error=exception)
         self.done.emit(cards, error)
 
 
@@ -657,7 +665,7 @@ class CardsDialog(QDialog):
     def __init__(self, parent, cards):
         super().__init__(parent)
         self.cards = cards
-        self.setWindowTitle('Flashcards extraites des surlignages')
+        self.setWindowTitle(_('Flashcards extraites des surlignages'))
         self.resize(1100, 640)
 
         self.table = make_table(CARD_COLUMNS, CARD_SENTENCE)
@@ -671,7 +679,7 @@ class CardsDialog(QDialog):
             check.setCheckState(Qt.CheckState.Checked)
             check.setData(KEY_ROLE, row)
             self.table.setItem(row, CARD_CHECK, check)
-            self.table.setItem(row, CARD_KIND, make_cell(KIND_LABELS[card.kind]))
+            self.table.setItem(row, CARD_KIND, make_cell(_(KIND_LABELS[card.kind])))
             self.table.setItem(row, CARD_FRONT, make_cell(card.front, editable))
             self.table.setItem(row, CARD_BACK, make_cell(card.back, editable))
             self.table.setItem(row, CARD_NOTE, make_cell(card.note, editable))
@@ -680,11 +688,12 @@ class CardsDialog(QDialog):
         self.table.setSortingEnabled(True)
 
         vocabulary = sum(1 for card in cards if card.kind == 'vocabulary')
-        summary = QLabel(f'{len(cards)} carte(s) : {vocabulary} de vocabulaire, {len(cards) - vocabulary} tournure(s). '
-                         'Décochez celles à écarter ; recto, verso et remarque sont modifiables.')
+        summary = QLabel(_('{count} carte(s) : {vocabulary} de vocabulaire, {expressions} tournure(s). '
+                           'Décochez celles à écarter ; recto, verso et remarque sont modifiables.').format(
+            count=len(cards), vocabulary=vocabulary, expressions=len(cards) - vocabulary))
 
         self.export_bar = ExportBar(lambda: (self.notes(), 0))
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons = make_close_buttons()
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -715,13 +724,13 @@ class VocabTab(QWidget):
         self.conn, self.words, self.translations, self.filling, self.worker = None, {}, {}, False, None
         self.cache = make_cache()
 
-        self.source = SourceRow('vocab.db', 'kindle-vocab-anki-db', ('Base de vocabulaire Kindle', ['db']), path)
+        self.source = SourceRow('vocab.db', 'kindle-vocab-anki-db', (_('Base de vocabulaire Kindle'), ['db']), path)
         self.source.changed.connect(self.load)
 
         self.language, self.book, self.dates, self.search = QComboBox(), QComboBox(), DateRange(), QLineEdit()
         self.book.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.book.setMinimumContentsLength(30)
-        self.search.setPlaceholderText('Rechercher un mot')
+        self.search.setPlaceholderText(_('Rechercher un mot'))
         self.search.setClearButtonEnabled(True)
         self.language.currentIndexChanged.connect(self.on_language_changed)
         self.book.currentIndexChanged.connect(self.refresh)
@@ -737,7 +746,7 @@ class VocabTab(QWidget):
         self.table.setColumnWidth(COL_BOOK, 160)
         self.table.itemChanged.connect(self.on_item_changed)
 
-        check_all, uncheck_all, self.count = QPushButton('Tout cocher'), QPushButton('Tout décocher'), QLabel('')
+        check_all, uncheck_all, self.count = QPushButton(_('Tout cocher')), QPushButton(_('Tout décocher')), QLabel('')
         check_all.clicked.connect(lambda: self.set_all_checked(True))
         uncheck_all.clicked.connect(lambda: self.set_all_checked(False))
         selection = QHBoxLayout()
@@ -746,20 +755,20 @@ class VocabTab(QWidget):
         selection.addWidget(self.count, 1)
 
         self.target, self.provider = QComboBox(), QComboBox()
-        for code, name in sorted(translators.LANGUAGES.items(), key=lambda entry: entry[1]):
+        for name, code in sorted((language_label(name), code) for code, name in translators.LANGUAGES.items()):
             self.target.addItem(name, code)
         self.target.setCurrentIndex(max(self.target.findData(prefs['target_lang']), 0))
         for key, label in PROVIDERS:
-            self.provider.addItem(label, key)
+            self.provider.addItem(_(label), key)
         self.provider.setCurrentIndex(max(self.provider.findData(prefs['provider']), 0))
         self.target.currentIndexChanged.connect(self.on_target_changed)
         self.provider.currentIndexChanged.connect(self.apply_cached_translations)
-        self.replace = QCheckBox('Remplacer les traductions existantes')
-        translate = QPushButton('Traduire les mots cochés')
+        self.replace = QCheckBox(_('Remplacer les traductions existantes'))
+        translate = QPushButton(_('Traduire les mots cochés'))
         translate.clicked.connect(self.translate)
 
         translation = QHBoxLayout()
-        for widget in (QLabel('Traduire vers'), self.target, QLabel('avec'), self.provider, self.replace):
+        for widget in (QLabel(_('Traduire vers')), self.target, QLabel(_('avec')), self.provider, self.replace):
             translation.addWidget(widget)
         translation.addStretch(1)
         translation.addWidget(translate)
@@ -783,19 +792,19 @@ class VocabTab(QWidget):
                 conn = vocab.open_db(path)
                 languages = vocab.list_languages(conn)
         except sqlite3.Error as error:
-            error_dialog(self, 'Vocabulaire Kindle', f'Impossible de lire {path} : {error}', show=True)
+            error_dialog(self, _('Vocabulaire Kindle'), _('Impossible de lire {path} : {error}').format(path=path, error=error), show=True)
             return
         self.conn = conn
         prefs['vocab_db'] = path
-        fill_combo(self.language, 'Toutes les langues',
-                   [(lang, f'{translators.language_name(lang)} ({count})') for lang, count in languages])
+        fill_combo(self.language, _('Toutes les langues'),
+                   [(lang, f'{language_label(translators.language_name(lang))} ({count})') for lang, count in languages])
         self.on_language_changed()
 
     def on_language_changed(self):
         if self.conn is None:
             return
         books = vocab.list_books(self.conn, self.language.currentData())
-        fill_combo(self.book, 'Tous les livres', [(title, f'{title} ({count})') for title, count in books])
+        fill_combo(self.book, _('Tous les livres'), [(title, f'{title} ({count})') for title, count in books])
         self.refresh()
 
     def refresh(self):
@@ -879,7 +888,8 @@ class VocabTab(QWidget):
     def update_count(self):
         checked = self.checked_words()
         translated = sum(1 for word in checked if self.translations.get(word.key))
-        self.count.setText(f'{len(checked)} mot(s) coché(s) sur {len(self.words)}, dont {translated} traduit(s)')
+        self.count.setText(_('{checked} mot(s) coché(s) sur {total}, dont {translated} traduit(s)').format(
+            checked=len(checked), total=len(self.words), translated=translated))
 
     def translate(self):
         target, provider = self.target.currentData(), self.provider.currentData()
@@ -888,11 +898,12 @@ class VocabTab(QWidget):
             if word.lang != target and (self.replace.isChecked() or not self.translations.get(word.key))
         ]
         if not words:
-            info_dialog(self, 'Vocabulaire Kindle', 'Aucun mot coché à traduire.', show=True)
+            info_dialog(self, _('Vocabulaire Kindle'), _('Aucun mot coché à traduire.'), show=True)
             return
         if provider in PAID_PROVIDERS and len(words) > CONFIRMATION_THRESHOLD and not question_dialog(
-            self, 'Vocabulaire Kindle',
-            f'{len(words)} mots vont être envoyés à {self.provider.currentText()}, un service payant. Continuer ?',
+            self, _('Vocabulaire Kindle'),
+            _('{count} mots vont être envoyés à {service}, un service payant. Continuer ?').format(
+                count=len(words), service=self.provider.currentText()),
         ):
             return
 
@@ -900,7 +911,7 @@ class VocabTab(QWidget):
         for word in words:
             groups.setdefault(word.lang, []).append(translators.Item(word.key, word.word, word.stem, word.usage))
 
-        progress = QProgressDialog('Traduction en cours…', 'Annuler', 0, len(words), self)
+        progress = QProgressDialog(_('Traduction en cours…'), _('Annuler'), 0, len(words), self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
@@ -919,7 +930,7 @@ class VocabTab(QWidget):
         self.apply_cached_translations()
         prefs['target_lang'], prefs['provider'] = self.target.currentData(), self.provider.currentData()
         if error:
-            error_dialog(self, 'Vocabulaire Kindle', error, show=True)
+            error_dialog(self, _('Vocabulaire Kindle'), error, show=True)
 
     def collect_notes(self):
         checked = self.checked_words()
@@ -936,7 +947,7 @@ class HighlightsTab(QWidget):
         super().__init__()
         self.passages, self.visible, self.worker, self.cache, self.filling = [], [], None, make_cache(), False
 
-        self.source = SourceRow('My Clippings.txt', 'kindle-vocab-anki-clippings', ('Surlignages Kindle', ['txt']), path)
+        self.source = SourceRow('My Clippings.txt', 'kindle-vocab-anki-clippings', (_('Surlignages Kindle'), ['txt']), path)
         self.source.changed.connect(self.load)
         self.book, self.dates = QComboBox(), DateRange()
         self.book.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -953,10 +964,10 @@ class HighlightsTab(QWidget):
         self.table.setColumnWidth(5, 180)
         self.table.itemChanged.connect(lambda _item: self.update_count())
 
-        check_all, uncheck_all, self.count = QPushButton('Tout cocher'), QPushButton('Tout décocher'), QLabel('')
+        check_all, uncheck_all, self.count = QPushButton(_('Tout cocher')), QPushButton(_('Tout décocher')), QLabel('')
         check_all.clicked.connect(lambda: self.set_all_checked(True))
         uncheck_all.clicked.connect(lambda: self.set_all_checked(False))
-        copy, export = QPushButton('Copier en Markdown'), QPushButton('Exporter en Markdown…')
+        copy, export = QPushButton(_('Copier en Markdown')), QPushButton(_('Exporter en Markdown…'))
         copy.clicked.connect(self.copy)
         export.clicked.connect(self.export)
         actions = QHBoxLayout()
@@ -966,17 +977,17 @@ class HighlightsTab(QWidget):
         self.export_bar = ExportBar(self.collect_notes, reverse_allowed=False, audio_allowed=False)
 
         self.target, self.provider = QComboBox(), QComboBox()
-        for code, name in sorted(translators.LANGUAGES.items(), key=lambda entry: entry[1]):
+        for name, code in sorted((language_label(name), code) for code, name in translators.LANGUAGES.items()):
             self.target.addItem(name, code)
         self.target.setCurrentIndex(max(self.target.findData(prefs['target_lang']), 0))
         for key, label in LLM_PROVIDERS:
-            self.provider.addItem(label, key)
+            self.provider.addItem(_(label), key)
         self.provider.setCurrentIndex(max(self.provider.findData(prefs['extract_provider']), 0))
-        self.refresh_cards = QCheckBox('Réanalyser les passages déjà analysés')
-        extract = QPushButton('Extraire vocabulaire et tournures…')
+        self.refresh_cards = QCheckBox(_('Réanalyser les passages déjà analysés'))
+        extract = QPushButton(_('Extraire vocabulaire et tournures…'))
         extract.clicked.connect(self.extract)
         ai_row = QHBoxLayout()
-        for widget in (QLabel('Flashcards par IA : ma langue'), self.target, QLabel('avec'), self.provider, self.refresh_cards):
+        for widget in (QLabel(_('Flashcards par IA : ma langue')), self.target, QLabel(_('avec')), self.provider, self.refresh_cards):
             ai_row.addWidget(widget)
         ai_row.addStretch(1)
         ai_row.addWidget(extract)
@@ -997,10 +1008,10 @@ class HighlightsTab(QWidget):
             with busy_cursor(), open(path, encoding='utf-8-sig') as file:
                 self.passages = clippings.parse(file.read())
         except (OSError, UnicodeDecodeError) as error:
-            error_dialog(self, 'Surlignages Kindle', f'Impossible de lire {path} : {error}', show=True)
+            error_dialog(self, _('Surlignages Kindle'), _('Impossible de lire {path} : {error}').format(path=path, error=error), show=True)
             return
         prefs['clippings'] = path
-        fill_combo(self.book, 'Tous les livres',
+        fill_combo(self.book, _('Tous les livres'),
                    [(title, f'{title} ({count})') for title, count in clippings.list_books(self.passages)])
         self.refresh()
 
@@ -1046,8 +1057,8 @@ class HighlightsTab(QWidget):
 
     def update_count(self):
         if not self.filling:
-            self.count.setText(f'{len(self.selected())} passage(s) coché(s) sur {len(self.visible)} affiché(s), '
-                               f'{len(self.passages)} au total')
+            self.count.setText(_('{checked} passage(s) coché(s) sur {shown} affiché(s), {total} au total').format(
+                checked=len(self.selected()), shown=len(self.visible), total=len(self.passages)))
 
     def collect_notes(self):
         selected = self.selected()
@@ -1065,15 +1076,16 @@ class HighlightsTab(QWidget):
         passages = [passage for passage in self.selected() if passage.text]
         provider = self.provider.currentData()
         if not passages:
-            error_dialog(self, 'Surlignages Kindle', 'Aucun surlignage coché.', show=True)
+            error_dialog(self, _('Surlignages Kindle'), _('Aucun surlignage coché.'), show=True)
             return
         if provider in PAID_PROVIDERS and len(passages) > CONFIRMATION_THRESHOLD and not question_dialog(
-            self, 'Surlignages Kindle',
-            f'{len(passages)} passages vont être envoyés à {self.provider.currentText()}, un service payant. Continuer ?',
+            self, _('Surlignages Kindle'),
+            _('{count} passages vont être envoyés à {service}, un service payant. Continuer ?').format(
+                count=len(passages), service=self.provider.currentText()),
         ):
             return
 
-        progress = QProgressDialog('Analyse des surlignages…', 'Annuler', 0, len(passages), self)
+        progress = QProgressDialog(_('Analyse des surlignages…'), _('Annuler'), 0, len(passages), self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
@@ -1083,7 +1095,7 @@ class HighlightsTab(QWidget):
         )
         def on_progress(done, total):
             progress.setValue(done)
-            progress.setLabelText(f'Analyse des surlignages : {done}/{total} passage(s)…')
+            progress.setLabelText(_('Analyse des surlignages : {done}/{total} passage(s)…').format(done=done, total=total))
 
         self.worker.progress.connect(on_progress)
         self.worker.done.connect(lambda cards, error: self.on_extracted(progress, cards, error))
@@ -1094,25 +1106,25 @@ class HighlightsTab(QWidget):
         progress.reset()
         prefs['target_lang'], prefs['extract_provider'] = self.target.currentData(), self.provider.currentData()
         if error:
-            error_dialog(self, 'Surlignages Kindle', error, show=True)
+            error_dialog(self, _('Surlignages Kindle'), error, show=True)
             return
         if not cards:
-            info_dialog(self, 'Surlignages Kindle', 'Le modèle n\'a rien trouvé à mettre en carte dans ces passages.', show=True)
+            info_dialog(self, _('Surlignages Kindle'), _('Le modèle n\'a rien trouvé à mettre en carte dans ces passages.'), show=True)
             return
         CardsDialog(self, cards).exec()
 
     def copy(self):
         selected = self.selected()
         QApplication.clipboard().setText(clippings.to_markdown(selected))
-        self.count.setText(f'{len(selected)} passage(s) copié(s) dans le presse-papiers')
+        self.count.setText(_('{count} passage(s) copié(s) dans le presse-papiers').format(count=len(selected)))
 
     def export(self):
         selected = self.selected()
         if not selected:
-            error_dialog(self, 'Surlignages Kindle', 'Aucun surlignage coché.', show=True)
+            error_dialog(self, _('Surlignages Kindle'), _('Aucun surlignage coché.'), show=True)
             return
         name = apkg.make_tag(self.book.currentData() or 'surlignages-kindle') or 'surlignages-kindle'
-        path = choose_save_file(self, 'kindle-vocab-anki-markdown', 'Exporter les surlignages',
+        path = choose_save_file(self, 'kindle-vocab-anki-markdown', _('Exporter les surlignages'),
                                 filters=[('Markdown', ['md'])], initial_filename=f'{name}.md')
         if not path:
             return
@@ -1120,26 +1132,26 @@ class HighlightsTab(QWidget):
             with open(path, 'w', encoding='utf-8') as file:
                 file.write(clippings.to_markdown(selected))
         except OSError as error:
-            error_dialog(self, 'Surlignages Kindle', f'Écriture impossible : {error}', show=True)
+            error_dialog(self, _('Surlignages Kindle'), _('Écriture impossible : {error}').format(error=error), show=True)
             return
-        info_dialog(self, 'Surlignages Kindle', f'{len(selected)} passage(s) exporté(s) dans {path}.', show=True)
+        info_dialog(self, _('Surlignages Kindle'), _('{count} passage(s) exporté(s) dans {path}.').format(count=len(selected), path=path), show=True)
 
 class MainDialog(QDialog):
     def __init__(self, parent, vocab_db, clippings_path, plugin=None):
         super().__init__(parent)
         self.plugin = plugin
-        self.setWindowTitle('Vocabulaire et surlignages Kindle')
+        self.setWindowTitle(_('Vocabulaire et surlignages Kindle'))
         self.resize(1150, 720)
 
         self.vocab_tab, self.highlights_tab = VocabTab(vocab_db), HighlightsTab(clippings_path)
         tabs = QTabWidget()
-        tabs.addTab(self.vocab_tab, 'Vocabulaire')
-        tabs.addTab(self.highlights_tab, 'Surlignages')
+        tabs.addTab(self.vocab_tab, _('Vocabulaire'))
+        tabs.addTab(self.highlights_tab, _('Surlignages'))
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons = make_close_buttons()
         buttons.rejected.connect(self.reject)
         if plugin is not None:
-            preferences = buttons.addButton('Préférences…', QDialogButtonBox.ButtonRole.ActionRole)
+            preferences = buttons.addButton(_('Préférences…'), QDialogButtonBox.ButtonRole.ActionRole)
             preferences.clicked.connect(self.configure)
 
         layout = QVBoxLayout(self)

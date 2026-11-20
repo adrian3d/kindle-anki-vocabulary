@@ -8,6 +8,12 @@ import tempfile
 import time
 from contextlib import closing
 
+try:
+    from calibre_plugins.kindle_vocab_anki.i18n import _
+except ImportError:
+    # Hors de calibre, dans les tests, les modules du plugin s'importent sans le préfixe calibre_plugins.
+    from i18n import _
+
 ANKIDROID = 'com.ichi2.anki'
 INTENT_HANDLER = f'{ANKIDROID}/.IntentHandler'
 REMOTE_NAME = 'kindle-vocab-anki.apkg'
@@ -33,15 +39,15 @@ class PhoneError(Exception):
 def connect(adb=None, run=subprocess.run, sleep=time.sleep):
     adb = adb or shutil.which('adb')
     if not adb:
-        raise PhoneError('La commande « adb » est introuvable : installez les outils Android (paquet android-tools-adb).')
+        raise PhoneError(_('La commande « adb » est introuvable : installez les outils Android (paquet android-tools-adb).'))
 
     phone = Phone(adb, None, run, sleep)
     devices = [line.split() for line in phone.adb('devices').splitlines()[1:] if line.strip()]
-    ready = [serial for serial, state, *_ in devices if state == 'device']
+    ready = [serial for serial, state, *_rest in devices if state == 'device']
     if not ready:
-        if any(state == 'unauthorized' for _serial, state, *_ in devices):
-            raise PhoneError('Le téléphone est branché mais n\'a pas autorisé le débogage USB : acceptez la demande à l\'écran.')
-        raise PhoneError('Aucun téléphone détecté : branchez-le en USB et activez le débogage USB.')
+        if any(state == 'unauthorized' for _serial, state, *_rest in devices):
+            raise PhoneError(_('Le téléphone est branché mais n\'a pas autorisé le débogage USB : acceptez la demande à l\'écran.'))
+        raise PhoneError(_('Aucun téléphone détecté : branchez-le en USB et activez le débogage USB.'))
     phone.serial = ready[0]
     return phone
 
@@ -55,9 +61,10 @@ class Phone:
         try:
             result = self.run(command, capture_output=True, text=True, timeout=timeout, errors='replace')
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise PhoneError(f'adb {args[0]} a échoué : {error}') from error
+            raise PhoneError(_('adb {command} a échoué : {error}').format(command=args[0], error=error)) from error
         if check and result.returncode != 0:
-            raise PhoneError(f'adb {" ".join(args[:3])} a échoué : {(result.stderr or result.stdout).strip()[:300]}')
+            raise PhoneError(_('adb {command} a échoué : {error}').format(
+                command=' '.join(args[:3]), error=(result.stderr or result.stdout).strip()[:300]))
         return result.stdout
 
     def shell(self, command, check=True, timeout=120):
@@ -72,20 +79,20 @@ class Phone:
                 if os.path.exists(local):
                     self.adb('pull', f'{remote_dir}/collection.anki2-wal', local + '-wal', check=False)
                     return read_deck_names(local)
-            raise PhoneError('Collection AnkiDroid introuvable sur le téléphone.')
+            raise PhoneError(_('Collection AnkiDroid introuvable sur le téléphone.'))
         finally:
             shutil.rmtree(directory, ignore_errors=True)
 
     def send_package(self, local_path, on_step=lambda message: None):
         if 'isKeyguardShowing=true' in self.shell('dumpsys window', check=False):
-            raise PhoneError('Le téléphone est verrouillé : déverrouillez-le puis relancez l\'envoi.')
+            raise PhoneError(_('Le téléphone est verrouillé : déverrouillez-le puis relancez l\'envoi.'))
         if ANKIDROID not in self.shell(f'pm list packages {ANKIDROID}'):
-            raise PhoneError('AnkiDroid n\'est pas installé sur le téléphone.')
+            raise PhoneError(_('AnkiDroid n\'est pas installé sur le téléphone.'))
 
-        on_step('Copie du paquet sur le téléphone…')
+        on_step(_('Copie du paquet sur le téléphone…'))
         self.adb('push', local_path, REMOTE_PATH)
         try:
-            on_step('Ouverture de l\'import dans AnkiDroid…')
+            on_step(_('Ouverture de l\'import dans AnkiDroid…'))
             self.shell(f'am start -a android.intent.action.VIEW -d {self._content_uri()} -t application/apkg '
                        f'--grant-read-uri-permission -n {INTENT_HANDLER}')
             if not self._confirm_import(on_step):
@@ -103,7 +110,7 @@ class Phone:
             identifiers = re.findall(rf'_id=(\d+), _display_name={re.escape(REMOTE_NAME)}\s*$', rows, re.MULTILINE)
             if identifiers:
                 return f'{DOWNLOADS_URI}/{identifiers[-1]}'
-        raise PhoneError('Android n\'a pas indexé le paquet copié : import impossible.')
+        raise PhoneError(_('Android n\'a pas indexé le paquet copié : import impossible.'))
 
     def _confirm_import(self, on_step):
         dialog_button = self._wait_for(_find_dialog_button, attempts=10)
@@ -111,13 +118,13 @@ class Phone:
             return False
         self._tap(dialog_button)
 
-        on_step('Validation de l\'import…')
+        on_step(_('Validation de l\'import…'))
         import_button = self._wait_for(_find_import_button, attempts=15)
         if import_button is None:
             return False
         self._tap(import_button)
 
-        on_step('Import en cours…')
+        on_step(_('Import en cours…'))
         self._wait_for(lambda nodes: None if _find_import_button(nodes) else True, attempts=60)
         self.shell('input keyevent KEYCODE_BACK', check=False)
         return True

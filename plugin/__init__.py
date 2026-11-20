@@ -1,9 +1,15 @@
 from calibre.customize import InterfaceActionBase
+from calibre.utils.localization import get_lang
 
 
 class KindleVocabAnkiPlugin(InterfaceActionBase):
     name = 'Kindle Vocab to Anki'
-    description = 'Vocabulaire et surlignages de la Kindle : filtres par langue, livre et date, traduction, export Anki et Markdown'
+    # La liste des extensions appartient à calibre : sa description suit la langue de calibre, pas le réglage du plugin.
+    description = (
+        'Vocabulaire et surlignages de la Kindle : filtres par langue, livre et date, traduction, export Anki et Markdown'
+        if get_lang().lower().startswith('fr') else
+        'Kindle vocabulary and highlights: filters by language, book and date, translation, Anki and Markdown export'
+    )
     supported_platforms = ['windows', 'osx', 'linux']
     author = 'Adrian Vaucoret'
     version = (1, 0, 0)

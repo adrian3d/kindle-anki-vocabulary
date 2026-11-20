@@ -2,6 +2,12 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+try:
+    from calibre_plugins.kindle_vocab_anki.i18n import _
+except ImportError:
+    # Hors de calibre, dans les tests, les modules du plugin s'importent sans le préfixe calibre_plugins.
+    from i18n import _
+
 ENTRY_SEPARATOR = '=========='
 TIME = r'(?P<hour>\d{1,2}):(?P<minute>\d{2}):(?P<second>\d{2})'
 DATE_PATTERNS = (
@@ -31,7 +37,8 @@ class Passage:
         if self.page:
             parts.append(f'p. {self.page}')
         if self.start:
-            parts.append(f'emp. {self.start}' if self.start == self.end else f'emp. {self.start}-{self.end}')
+            span = str(self.start) if self.start == self.end else f'{self.start}-{self.end}'
+            parts.append(_('emp. {location}').format(location=span))
         parts.append(self.date.strftime('%d/%m/%Y'))
         return ' · '.join(parts)
 
@@ -73,10 +80,11 @@ def to_markdown(passages):
         lines += [f'# {book}', '']
         for passage in (p for p in passages if p.book == book):
             if passage.text is None:
-                lines += [f'**Note** ({passage.reference}) : {note}\n' for note in passage.notes]
+                lines += [_('**Note** ({reference}) : {note}').format(reference=passage.reference, note=note) + '\n'
+                          for note in passage.notes]
                 continue
             lines += ['> ' + passage.text.replace('\n', '\n> '), '>', f'> — {passage.reference}', '']
-            lines += [f'**Note** : {note}\n' for note in passage.notes]
+            lines += [_('**Note** : {note}').format(note=note) + '\n' for note in passage.notes]
     return '\n'.join(lines)
 
 

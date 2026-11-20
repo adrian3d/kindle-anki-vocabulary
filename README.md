@@ -98,6 +98,10 @@ GitHub Actions lance alors les tests, construit le fichier installable et publie
 3. Exporter dans un fichier, vers le téléphone ou vers AnkiWeb.
 
 Les clés d'API, le modèle Claude et le serveur Ollama se règlent dans « Préférences… », en bas de la fenêtre.
+
+Le plugin parle français quand calibre est en français, anglais sinon. La « Langue du plugin », dans les
+préférences, impose l'une ou l'autre ; elle s'applique à la prochaine ouverture de la fenêtre, et au bouton de la
+barre d'outils après un redémarrage de calibre.
 Le « Contact pour Wikimedia » (adresse e-mail ou page web) est joint aux téléchargements de prononciations :
 sans lui, Wikimedia en refuse une bonne partie et la voix de synthèse prend le relais.
 
@@ -130,7 +134,7 @@ Dans le dossier de configuration de calibre, sous `plugins/` :
 ## Développement
 
 Les modules sans dépendance à calibre (`vocab`, `clippings`, `translators`, `flashcards`, `apkg`, `audio`,
-`phone`, `ankiweb`, `cache`) se testent hors de calibre :
+`phone`, `ankiweb`, `cache`, `i18n`) se testent hors de calibre :
 
 ```bash
 uv run --no-project --with pytest --with anki pytest tests
@@ -138,6 +142,10 @@ uv run --no-project --with pytest --with anki pytest tests
 
 Les tests d'AnkiWeb lancent le serveur de synchronisation fourni par la bibliothèque `anki` ; sans elle, ils sont
 ignorés. Après une modification, `calibre-customize -b plugin` réinstalle le plugin.
+
+Les textes de l'interface sont écrits en français dans le code, entourés de `_()` (ou de `N_()` pour une constante
+traduite à l'affichage), et leur traduction anglaise figure dans `plugin/i18n.py`. Un test échoue si un texte n'a
+pas de traduction, ou si une traduction n'a plus de texte.
 
 ## Limites connues
 
