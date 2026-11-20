@@ -1010,8 +1010,8 @@ class HighlightsTab(QWidget):
         layout.addLayout(filters)
         layout.addWidget(self.table, 1)
         layout.addLayout(actions)
-        layout.addWidget(self.export_bar)
         layout.addLayout(ai_row)
+        layout.addWidget(self.export_bar)
 
         if path:
             self.load(path)
