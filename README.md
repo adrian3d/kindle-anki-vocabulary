@@ -44,6 +44,8 @@ Chaque note porte un identifiant stable : réexporter les mêmes mots ne crée p
 | Ollama | adresse et modèle | Local ; repasse mot par mot quand le modèle ne gère pas les lots |
 
 L'extraction de flashcards depuis les surlignages demande un modèle de langue : Claude ou Ollama.
+Avec Ollama, il faut un modèle généraliste (gemma3, qwen3…) : un modèle de traduction comme translategemma traduit
+aussi le recto des cartes.
 
 ## Installation
 

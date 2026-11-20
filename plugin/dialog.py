@@ -607,7 +607,7 @@ class CardsDialog(QDialog):
                 continue
             card = self.cards[check.data(KEY_ROLE)]
             notes.append(apkg.Note(
-                f'highlight:{front.lower()}', front, back, card.sentence, card.front, card.book,
+                f'highlight:{front.lower()}', front, back, card.sentence, card.excerpt, card.book,
                 ('kindle', 'surlignage', KIND_LABELS[card.kind].lower(), apkg.make_tag(card.book)),
                 self.table.item(row, CARD_NOTE).text().strip(),
             ))

@@ -32,8 +32,9 @@ class FakeLlm:
         return self.answers.pop(0)
 
 
-def card(passage_id, kind, front, back, note=''):
-    return {'passage_id': passage_id, 'kind': kind, 'front': front, 'back': back, 'note': note}
+def card(passage_id, kind, front, back, note='', excerpt=None):
+    return {'passage_id': passage_id, 'kind': kind, 'excerpt': front if excerpt is None else excerpt,
+            'front': front, 'back': back, 'note': note}
 
 
 def test_it_extracts_cards_per_passage_and_keeps_their_sentence(tmp_path):
@@ -41,7 +42,7 @@ def test_it_extracts_cards_per_passage_and_keeps_their_sentence(tmp_path):
         {'cards': [
             card(0, 'expression', 'so much as', 'ne serait-ce que', 'Renforce une condition.'),
             card(1, 'vocabulary', 'dizziness', 'vertige'),
-            card(1, 'vocabulary', 'to stumble', 'trébucher'),
+            card(1, 'vocabulary', 'to stumble', 'trébucher', excerpt='stumbled'),
         ]},
         {'cards': []},
     ])
@@ -57,6 +58,7 @@ def test_it_extracts_cards_per_passage_and_keeps_their_sentence(tmp_path):
         ('vocabulary', 'to stumble', 'trébucher', ''),
     ]
     assert cards[1].sentence == 'I willed the dizziness away, shook her off, then stumbled.'
+    assert cards[2].excerpt == 'stumbled'
     assert cards[0].book == 'Siege and Storm'
     assert progress == [(0, 3), (2, 3), (3, 3)]
     assert [entry['id'] for entry in llm.calls[0]['user']] == [0, 1]
@@ -72,12 +74,38 @@ def test_it_drops_invalid_duplicate_and_excess_cards(tmp_path):
         card(0, 'grammar', 'x', 'y'),
         card(0, 'vocabulary', '', 'vide'),
         card(9, 'vocabulary', 'ghost', 'fantôme'),
-        *[card(0, 'vocabulary', f'word{n}', 'mot') for n in range(9)],
+        *[card(0, 'vocabulary', f'word{n}', 'mot', excerpt='rotting') for n in range(9)],
     ]}])
 
     cards = flashcards.extract_flashcards(llm, [Passage('free of that rotting stench')], 'fr', 'French', TranslationCache(tmp_path / 'c.sqlite3'))
 
     assert [c.front for c in cards] == ['Stench', 'word0', 'word1', 'word2']
+
+
+def test_it_drops_cards_whose_excerpt_is_not_in_the_passage(tmp_path):
+    llm = FakeLlm([{'cards': [
+        card(0, 'vocabulary', 'tirer péniblement', 'inspirer profondément', excerpt='tirer péniblement'),
+        card(0, 'expression', 'draw in a sharp breath', 'inspirer brusquement', excerpt='DREW IN  a sharp breath'),
+        card(0, 'expression', "can't help ...", 'ne pas pouvoir s’empêcher de', excerpt="couldn't help"),
+    ]}])
+
+    cards = flashcards.extract_flashcards(
+        llm, [Passage('I drew in a sharp breath and couldn’t help but laugh.')], 'fr', 'French', TranslationCache(tmp_path / 'c.sqlite3'),
+    )
+
+    assert [c.front for c in cards] == ['draw in a sharp breath', "can't help ..."]
+
+
+def test_it_asks_again_when_the_prompt_changes(tmp_path, monkeypatch):
+    cache = TranslationCache(tmp_path / 'cache.sqlite3')
+    answer = {'cards': [card(0, 'expression', 'so much as', 'ne serait-ce que')]}
+    flashcards.extract_flashcards(FakeLlm([answer]), PASSAGES[:1], 'fr', 'French', cache)
+    monkeypatch.setattr(flashcards, 'instructions', lambda language: f'New prompt for {language}')
+
+    again = FakeLlm([answer])
+    flashcards.extract_flashcards(again, PASSAGES[:1], 'fr', 'French', cache)
+
+    assert len(again.calls) == 1
 
 
 def test_it_never_asks_twice_for_the_same_passage_and_stops_on_cancel(tmp_path):

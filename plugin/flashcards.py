@@ -15,11 +15,12 @@ SCHEMA = {
                 'properties': {
                     'passage_id': {'type': 'integer'},
                     'kind': {'type': 'string', 'enum': list(KINDS)},
+                    'excerpt': {'type': 'string'},
                     'front': {'type': 'string'},
                     'back': {'type': 'string'},
                     'note': {'type': 'string'},
                 },
-                'required': ['passage_id', 'kind', 'front', 'back', 'note'],
+                'required': ['passage_id', 'kind', 'excerpt', 'front', 'back', 'note'],
                 'additionalProperties': False,
             },
         }
@@ -32,6 +33,7 @@ SCHEMA = {
 @dataclass(frozen=True)
 class Flashcard:
     kind: str
+    excerpt: str
     front: str
     back: str
     note: str
@@ -50,17 +52,23 @@ def instructions(language):
         f'Skip basic words, proper nouns and invented words. Return at most {MAX_CARDS_PER_PASSAGE} cards per passage, '
         'and none when nothing is worth learning.\n'
         'For each card:\n'
-        '- "front": in the language of the passage. The dictionary form for a word (infinitive, singular); '
-        'for an expression, a short reusable form with "..." or "somebody/something" in place of the variable parts.\n'
-        f'- "back": the {language} translation, in the sense used in the passage. One to three short equivalents.\n'
+        '- "excerpt": the words of the passage the card is about, copied exactly as they appear in the passage.\n'
+        '- "front": the same words, still in the language of the passage: never translate them. In lowercase, except '
+        'for proper nouns. The dictionary form for a word (infinitive, singular); for an expression, a short reusable '
+        'form with "..." or "somebody/something" in place of the variable parts.\n'
+        f'- "back": the {language} translation of "front", in the sense used in the passage. '
+        'One to three short equivalents.\n'
         f'- "note": one short sentence in {language} about the nuance, register or construction; '
         'an empty string when there is nothing useful to add.\n'
+        'Only "back" and "note" are in '
+        f'{language}. For example, from "I drew in a sharp breath and lay back.", a good card has the excerpt '
+        '"drew in a sharp breath" and the front "draw in a sharp breath"; "lay back" is too basic for a card.\n'
         f'Ignore passages that are already written in {language}. Keep the passage ids.'
     )
 
 
 def extract_flashcards(llm, passages, target, language, cache, on_progress=None, should_cancel=None):
-    provider = f'extract:{llm.cache_id}'
+    provider = f'extract:{llm.cache_id}:{_digest(instructions(language))[:12]}'
     passages = [passage for passage in passages if passage.text]
     cards_by_passage, missing = {}, []
     for index, passage in enumerate(passages):
@@ -100,10 +108,17 @@ def extract_flashcards(llm, passages, target, language, cache, on_progress=None,
 
 
 def _make_card(entry, passage):
-    front, back = (entry.get('front') or '').strip(), (entry.get('back') or '').strip()
-    if not front or not back or entry.get('kind') not in KINDS:
+    excerpt, front, back = ((entry.get(key) or '').strip() for key in ('excerpt', 'front', 'back'))
+    if not excerpt or not front or not back or entry.get('kind') not in KINDS:
         return None
-    return Flashcard(entry['kind'], front, back, (entry.get('note') or '').strip(), passage.text, passage.book)
+    # Un modèle de traduction traduit aussi le recto : un extrait absent du passage trahit une carte inventée.
+    if _normalize(excerpt) not in _normalize(passage.text):
+        return None
+    return Flashcard(entry['kind'], excerpt, front, back, (entry.get('note') or '').strip(), passage.text, passage.book)
+
+
+def _normalize(text):
+    return ' '.join(text.replace('’', "'").replace('‘', "'").split()).casefold()
 
 
 def _digest(text):
