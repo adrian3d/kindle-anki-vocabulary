@@ -398,4 +398,22 @@ ENGLISH = {
         'Wiktionary: download failed ({error})',
     'Wiktionnaire : pas de dictionnaire {source} → {target}':
         'Wiktionary: no {source} → {target} dictionary',
+    "Aujourd'hui":
+        'Today',
+    '7 derniers jours':
+        'Last 7 days',
+    '30 derniers jours':
+        'Last 30 days',
+    'Cette année':
+        'This year',
+    'Toutes les dates':
+        'All dates',
+    'Période':
+        'Period',
+    'Cocher les lignes sélectionnées':
+        'Check selected rows',
+    'Décocher les lignes sélectionnées':
+        'Uncheck selected rows',
+    'Maj+clic sur une case coche ou décoche toute la plage. Espace, ou le clic droit, coche ou décoche les lignes sélectionnées (Maj, Ctrl, Ctrl+A).':
+        'Shift+click on a box checks or unchecks the whole range. Space, or a right click, checks or unchecks the selected rows (Shift, Ctrl, Ctrl+A).',
 }

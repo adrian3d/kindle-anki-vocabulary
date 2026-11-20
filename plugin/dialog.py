@@ -4,12 +4,13 @@ import sqlite3
 import tempfile
 from contextlib import contextmanager
 from dataclasses import replace
+from datetime import date, timedelta
 
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, info_dialog, question_dialog
 from qt.core import (
     QApplication, QCheckBox, QComboBox, QDate, QDateEdit, QDialog, QDialogButtonBox, QEvent, QHBoxLayout, QHeaderView,
-    QGroupBox, QLabel, QLineEdit, QProgressBar, QProgressDialog, QPushButton, QRadioButton, Qt, QTableWidget, QTableWidgetItem, QTabWidget, QThread,
-    QVBoxLayout, QWidget, pyqtSignal,
+    QGroupBox, QLabel, QLineEdit, QMenu, QObject, QProgressBar, QProgressDialog, QPushButton, QRadioButton, Qt, QTableWidget,
+    QTableWidgetItem, QTabWidget, QThread, QToolButton, QVBoxLayout, QWidget, pyqtSignal,
 )
 
 from calibre_plugins.kindle_vocab_anki import ankiweb, apkg, clippings, flashcards, phone, translators, vocab
@@ -69,6 +70,21 @@ class DateRange(QWidget):
         self.start_enabled, self.start = self._add_bound(layout, _('Du'))
         self.end_enabled, self.end = self._add_bound(layout, _('Au'))
 
+        periods = QMenu(self)
+        for label, start in (
+            (N_('Aujourd\'hui'), lambda today: today),
+            (N_('7 derniers jours'), lambda today: today - timedelta(days=6)),
+            (N_('30 derniers jours'), lambda today: today - timedelta(days=29)),
+            (N_('Cette année'), lambda today: today.replace(month=1, day=1)),
+            (N_('Toutes les dates'), lambda today: None),
+        ):
+            periods.addAction(_(label)).triggered.connect(lambda _checked=False, start=start: self.set_bounds(start(date.today()), None))
+        period = QToolButton()
+        period.setText(_('Période'))
+        period.setMenu(periods)
+        period.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        layout.addWidget(period)
+
     def _add_bound(self, layout, label):
         enabled, edit = QCheckBox(label), QDateEdit(QDate.currentDate())
         edit.setCalendarPopup(True)
@@ -96,6 +112,17 @@ class DateRange(QWidget):
                     calendar.setCurrentPage(self.latest.year, self.latest.month)
         return False
 
+    def set_bounds(self, start, end):
+        for enabled, edit, value in ((self.start_enabled, self.start, start), (self.end_enabled, self.end, end)):
+            enabled.blockSignals(True)
+            edit.blockSignals(True)
+            enabled.setChecked(value is not None)
+            if value is not None:
+                edit.setDate(QDate(value.year, value.month, value.day))
+            enabled.blockSignals(False)
+            edit.blockSignals(False)
+        self.changed.emit()
+
     def bounds(self):
         return (
             self.start.date().toPyDate() if self.start_enabled.isChecked() else None,
@@ -120,6 +147,71 @@ def make_table(columns, stretch_column):
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     table.horizontalHeader().setSectionResizeMode(stretch_column, QHeaderView.ResizeMode.Stretch)
     return table
+
+
+class RowChecker(QObject):
+    def __init__(self, table, column, is_filling, on_changed):
+        super().__init__(table)
+        self.table, self.column, self.is_filling, self.on_changed = table, column, is_filling, on_changed
+        self.anchor, self.applying = None, False
+        table.installEventFilter(self)
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table.customContextMenuRequested.connect(self.show_menu)
+        table.itemChanged.connect(self.on_item_changed)
+
+    def selected_rows(self):
+        return sorted({index.row() for index in self.table.selectionModel().selectedRows()})
+
+    def is_checked(self, row):
+        return self.table.item(row, self.column).checkState() == Qt.CheckState.Checked
+
+    def set_rows(self, rows, checked):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self.applying = True
+        self.table.blockSignals(True)
+        try:
+            for row in rows:
+                self.table.item(row, self.column).setCheckState(state)
+        finally:
+            self.table.blockSignals(False)
+            self.applying = False
+        self.table.viewport().update()
+        self.on_changed()
+
+    def toggle_selection(self):
+        rows = self.selected_rows()
+        if rows:
+            self.set_rows(rows, not all(self.is_checked(row) for row in rows))
+
+    def on_item_changed(self, item):
+        if self.applying or self.is_filling() or item.column() != self.column:
+            return
+        row = item.row()
+        shift = QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
+        if shift and self.anchor is not None and self.anchor < self.table.rowCount():
+            low, high = sorted((self.anchor, row))
+            self.set_rows(range(low, high + 1), item.checkState() == Qt.CheckState.Checked)
+        self.anchor = row
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Space \
+                and self.table.state() != QTableWidget.State.EditingState:
+            self.toggle_selection()
+            return True
+        return False
+
+    def show_menu(self, position):
+        rows = self.selected_rows()
+        menu = QMenu(self.table)
+        for label, checked in ((N_('Cocher les lignes sélectionnées'), True), (N_('Décocher les lignes sélectionnées'), False)):
+            action = menu.addAction(_(label))
+            action.setEnabled(bool(rows))
+            action.triggered.connect(lambda _checked=False, checked=checked: self.set_rows(rows, checked))
+        menu.exec(self.table.viewport().mapToGlobal(position))
+
+
+SELECTION_HINT = N_('Maj+clic sur une case coche ou décoche toute la plage. Espace, ou le clic droit, coche ou décoche '
+                    'les lignes sélectionnées (Maj, Ctrl, Ctrl+A).')
 
 
 @contextmanager
@@ -699,11 +791,13 @@ class CardsDialog(QDialog):
             self.table.setItem(row, CARD_SENTENCE, make_cell(card.sentence))
         self.table.resizeColumnToContents(CARD_CHECK)
         self.table.setSortingEnabled(True)
+        self.row_checker = RowChecker(self.table, CARD_CHECK, lambda: False, lambda: None)
 
         vocabulary = sum(1 for card in cards if card.kind == 'vocabulary')
         summary = QLabel(_('{count} carte(s) : {vocabulary} de vocabulaire, {expressions} tournure(s). '
                            'Décochez celles à écarter ; recto, verso et remarque sont modifiables.').format(
             count=len(cards), vocabulary=vocabulary, expressions=len(cards) - vocabulary))
+        summary.setToolTip(_(SELECTION_HINT))
 
         self.export_bar = ExportBar(lambda: (self.notes(), 0))
         buttons = make_close_buttons()
@@ -758,8 +852,11 @@ class VocabTab(QWidget):
         self.table.setColumnWidth(COL_TRANSLATION, 240)
         self.table.setColumnWidth(COL_BOOK, 160)
         self.table.itemChanged.connect(self.on_item_changed)
+        self.row_checker = RowChecker(self.table, COL_CHECK, lambda: self.filling, self.update_count)
 
         check_all, uncheck_all, self.count = QPushButton(_('Tout cocher')), QPushButton(_('Tout décocher')), QLabel('')
+        for button in (check_all, uncheck_all):
+            button.setToolTip(_(SELECTION_HINT))
         check_all.clicked.connect(lambda: self.set_all_checked(True))
         uncheck_all.clicked.connect(lambda: self.set_all_checked(False))
         selection = QHBoxLayout()
@@ -976,8 +1073,11 @@ class HighlightsTab(QWidget):
         self.table.setColumnWidth(3, 190)
         self.table.setColumnWidth(5, 180)
         self.table.itemChanged.connect(lambda _item: self.update_count())
+        self.row_checker = RowChecker(self.table, HIGHLIGHT_CHECK, lambda: self.filling, self.update_count)
 
         check_all, uncheck_all, self.count = QPushButton(_('Tout cocher')), QPushButton(_('Tout décocher')), QLabel('')
+        for button in (check_all, uncheck_all):
+            button.setToolTip(_(SELECTION_HINT))
         check_all.clicked.connect(lambda: self.set_all_checked(True))
         uncheck_all.clicked.connect(lambda: self.set_all_checked(False))
         copy, export = QPushButton(_('Copier en Markdown')), QPushButton(_('Exporter en Markdown…'))
