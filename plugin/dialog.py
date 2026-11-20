@@ -419,13 +419,18 @@ class AnkiWebDialog(SendDialog):
         account_layout.addWidget(self.account_status)
         account_layout.addLayout(credentials)
 
+        self.replace_older = QCheckBox(_('Remplacer les cartes déjà présentes avec un ancien type de note'))
+        self.replace_older.setToolTip(_('Ces cartes, envoyées par une version précédente du plugin, n\'ont pas de son : '
+                                        'elles sont supprimées puis recréées dans le deck choisi, et perdent leur '
+                                        'historique de révision.'))
+
         notice = QLabel(_('Les cartes sont ajoutées à votre collection en ligne ; vos appareils les reçoivent à leur prochaine '
                           'synchronisation. Au premier usage, le plugin télécharge une fois les bibliothèques officielles Anki '
                           '(environ 12 Mo) dans son dossier de données ; rien d\'autre n\'est à installer.'))
         notice.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        for widget in (self.summary, account, self.chooser, self.reverse, notice):
+        for widget in (self.summary, account, self.chooser, self.reverse, self.replace_older, notice):
             layout.addWidget(widget)
         layout.addLayout(self.buttons)
 
@@ -485,22 +490,30 @@ class AnkiWebDialog(SendDialog):
 
     def send(self):
         deck, reverse, account = self.chooser.deck_name(), self.reverse.isChecked(), self.account()
+        replace_older = self.replace_older.isChecked()
         self.remember(deck)
         self.run(
             lambda on_step: with_temporary_package(
                 deck, self.notes, reverse, self.audio, on_step,
-                lambda path, has_media: self.client.export(account, path, on_step, has_media)),
+                lambda path, has_media: self.client.export(account, path, on_step, has_media, replace_older)),
             lambda result: self.on_sent(deck, result),
             N_('Préparation du paquet…'),
         )
 
     def on_sent(self, deck, result):
         self.on_decks(result)
-        existing = len(self.notes) - result['added']
-        message = _('{count} nouvelle(s) note(s) ajoutée(s) au deck « {deck} » sur AnkiWeb.').format(count=result['added'], deck=deck)
-        if existing:
-            message += ' ' + _('{count} y figuraient déjà.').format(count=existing)
-        self.progress.setText(message + ' ' + _('Synchronisez AnkiDroid pour les recevoir.'))
+        parts = [_('{count} nouvelle(s) note(s) ajoutée(s) au deck « {deck} » sur AnkiWeb.').format(count=result['added'], deck=deck)]
+        if result['replaced']:
+            parts.append(_('Dont {count} remplaçant une carte d\'un ancien type de note.').format(count=result['replaced']))
+        if result['existing']:
+            parts.append(_('{count} figuraient déjà dans la collection et restent dans leur deck.').format(count=result['existing']))
+        if result['conflicting']:
+            parts.append(_('{count} existent déjà avec un ancien type de note (deck « {decks} ») et n\'ont pas été envoyées : '
+                           'cochez « Remplacer les cartes déjà présentes avec un ancien type de note » pour les remplacer.').format(
+                count=result['conflicting'], decks=', '.join(result['conflicting_decks'])))
+        if result['added']:
+            parts.append(_('Synchronisez AnkiDroid pour les recevoir.'))
+        self.progress.setText(' '.join(parts))
 
 class ExportBar(QWidget):
     def __init__(self, collect_notes, reverse_allowed=True, audio_allowed=True):

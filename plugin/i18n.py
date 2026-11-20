@@ -322,8 +322,16 @@ ENGLISH = {
         '{count} note(s) imported into the "{deck}" deck on the phone.',
     'Connecté en tant que {user}.':
         'Logged in as {user}.',
-    '{count} y figuraient déjà.':
-        '{count} were already there.',
+    'Remplacer les cartes déjà présentes avec un ancien type de note':
+        'Replace cards already there with an older note type',
+    "Ces cartes, envoyées par une version précédente du plugin, n'ont pas de son : elles sont supprimées puis recréées dans le deck choisi, et perdent leur historique de révision.":
+        'These cards, sent by an earlier version of the plugin, have no sound: they are deleted and created again in the chosen deck, and lose their review history.',
+    "Dont {count} remplaçant une carte d'un ancien type de note.":
+        'Including {count} replacing a card of an older note type.',
+    '{count} figuraient déjà dans la collection et restent dans leur deck.':
+        '{count} were already in the collection and stay in their deck.',
+    "{count} existent déjà avec un ancien type de note (deck « {decks} ») et n'ont pas été envoyées : cochez « Remplacer les cartes déjà présentes avec un ancien type de note » pour les remplacer.":
+        '{count} already exist with an older note type ("{decks}" deck) and were not sent: check "Replace cards already there with an older note type" to replace them.',
     'Écriture impossible : {error}':
         'Could not write the file: {error}',
     '{count} ligne(s) cochée(s) sans contenu exportable ont été ignorée(s).':

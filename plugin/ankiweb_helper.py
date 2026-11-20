@@ -1,8 +1,12 @@
 """Exécuté dans un processus à part, avec les bibliothèques Anki téléchargées par le plugin en tête de sys.path."""
 import json
 import os
+import sqlite3
 import sys
+import tempfile
 import time
+import zipfile
+from contextlib import closing
 
 
 def N_(text):
@@ -48,10 +52,15 @@ def export(request):
 
     col, auth = open_synced(request)
     try:
-        before = col.note_count()
         emit(step=N_('Ajout des cartes…'))
-        col.import_anki_package(ImportAnkiPackageRequest(package_path=request['package'], options=ImportAnkiPackageOptions()))
-        added = col.note_count() - before
+        older = older_notes(col, request['package'])
+        replaced = 0
+        if request.get('replace_older') and older:
+            # Convertir ces notes au nouveau type forcerait une synchronisation complète ; les supprimer, non.
+            col.remove_notes(list(older))
+            replaced, older = len(older), {}
+        log = col.import_anki_package(
+            ImportAnkiPackageRequest(package_path=request['package'], options=ImportAnkiPackageOptions())).log
 
         emit(step=N_('Envoi vers AnkiWeb…'))
         required = synchronize(col, auth)
@@ -66,10 +75,33 @@ def export(request):
         if request.get('media'):
             emit(step=N_('Envoi des prononciations vers AnkiWeb…'))
             sync_media(col, auth)
-        return {'added': added, 'updated_or_existing': len(request.get('guids', [])) - added, 'endpoint': auth.endpoint,
-                'decks': deck_names(col)}
+        return {
+            'added': len(log.new), 'existing': len(log.updated) + len(log.duplicate), 'replaced': replaced,
+            'conflicting': len(log.conflicting), 'conflicting_decks': sorted(set(older.values())),
+            'endpoint': auth.endpoint, 'decks': deck_names(col),
+        }
     finally:
         col.close()
+
+
+def older_notes(col, package):
+    # Anki n'importe pas une note dont l'identifiant existe déjà avec un autre type de note : il la classe en conflit.
+    guids, notetype = package_notes(package)
+    if not guids:
+        return {}
+    marks = ','.join('?' * len(guids))
+    rows = col.db.all(
+        f'SELECT n.id, MIN(d.name) FROM notes n JOIN cards c ON c.nid = n.id JOIN decks d ON d.id = c.did '
+        f'WHERE n.guid IN ({marks}) AND n.mid != ? GROUP BY n.id', *guids, notetype)
+    return {note_id: deck for note_id, deck in rows}
+
+
+def package_notes(package):
+    with zipfile.ZipFile(package) as archive, tempfile.TemporaryDirectory() as directory:
+        archive.extract('collection.anki2', directory)
+        with closing(sqlite3.connect(os.path.join(directory, 'collection.anki2'))) as conn:
+            rows = conn.execute('SELECT guid, mid FROM notes').fetchall()
+    return [guid for guid, _mid in rows], (rows[0][1] if rows else 0)
 
 
 def open_synced(request):

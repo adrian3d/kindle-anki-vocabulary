@@ -141,3 +141,33 @@ def test_it_uploads_the_pronunciations_with_the_cards(tmp_path, server):
     card = device.get_card(device.find_cards('Word:billow card:1')[0])
     assert [tag.lang for tag in card.question_av_tags()] == ['en_US']
     device.close()
+
+
+def test_it_reports_cards_of_an_older_note_type_and_replaces_them_on_request(tmp_path, server, monkeypatch):
+    from anki.collection import Collection
+
+    computer, account = connect(tmp_path, 'computer', server)
+    with monkeypatch.context() as patch:
+        patch.setattr(apkg, 'MODEL_ID', 1763596800002)
+        patch.setattr(apkg, 'MODEL_NAME', 'Kindle vocabulary')
+        computer.export(account, make_package(tmp_path, 'old.apkg', 'English vocabulary', 'give in', 'grin'))
+
+    skipped = computer.export(account, make_package(tmp_path, 'new.apkg', 'Test prononciation', 'give in', 'wart'))
+
+    assert (skipped['added'], skipped['conflicting'], skipped['conflicting_decks'], skipped['replaced']) == (
+        1, 1, ['English vocabulary'], 0)
+
+    replaced = computer.export(account, make_package(tmp_path, 'again.apkg', 'Test prononciation', 'give in', 'wart'),
+                               replace_older=True)
+
+    assert (replaced['added'], replaced['replaced'], replaced['existing'], replaced['conflicting']) == (1, 1, 1, 0)
+    device = Collection(str(tmp_path / 'device.anki2'))
+    auth = device.sync_login('reader', 'secret', server)
+    device.sync_collection(auth, False)
+    device.close_for_full_sync()
+    device.full_upload_or_download(auth=auth, server_usn=None, upload=False)
+    device.reopen(after_full_sync=True)
+    words = lambda search: sorted(device.get_note(nid)['Word'] for nid in device.find_notes(search))
+    assert words('deck:"Test prononciation"') == ['give in', 'wart']
+    assert words('deck:"English vocabulary"') == ['grin']
+    device.close()
