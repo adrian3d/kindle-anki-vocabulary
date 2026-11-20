@@ -83,13 +83,15 @@ calibre-customize -b plugin
 
 ### Publier une version
 
-Mettre à jour `version` dans `plugin/__init__.py`, puis pousser une étiquette du même numéro :
+Mettre à jour `version` dans `plugin/__init__.py`, ajouter une section `## vX.Y.Z` en tête de `CHANGELOG.md`, puis
+pousser une étiquette du même numéro :
 
 ```bash
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-GitHub Actions lance alors les tests, construit le fichier installable et publie la version.
+GitHub Actions lance alors les tests, construit le fichier installable et publie la version, avec la section du
+changelog comme description.
 
 ## Utilisation
 

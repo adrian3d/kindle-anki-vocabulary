@@ -12,7 +12,7 @@ class KindleVocabAnkiPlugin(InterfaceActionBase):
     )
     supported_platforms = ['windows', 'osx', 'linux']
     author = 'Adrian Vaucoret'
-    version = (1, 0, 0)
+    version = (1, 1, 0)
     minimum_calibre_version = (7, 0, 0)
     actual_plugin = 'calibre_plugins.kindle_vocab_anki.action:KindleVocabAction'
 
