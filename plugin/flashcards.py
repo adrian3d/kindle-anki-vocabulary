@@ -67,12 +67,12 @@ def instructions(language):
     )
 
 
-def extract_flashcards(llm, passages, target, language, cache, on_progress=None, should_cancel=None):
+def extract_flashcards(llm, passages, target, language, cache, on_progress=None, should_cancel=None, refresh=False):
     provider = f'extract:{llm.cache_id}:{_digest(instructions(language))[:12]}'
     passages = [passage for passage in passages if passage.text]
     cards_by_passage, missing = {}, []
     for index, passage in enumerate(passages):
-        cached = cache.get(provider, '', target, _digest(passage.text))
+        cached = None if refresh else cache.get(provider, '', target, _digest(passage.text))
         if cached is None:
             missing.append(index)
         else:

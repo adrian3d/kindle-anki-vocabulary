@@ -21,7 +21,8 @@ Il lit deux fichiers de la liseuse :
 - filtres par livre et plage de dates, sélection par cases à cocher ;
 - copie ou export en Markdown ;
 - cartes « citation » : le passage au recto, le livre, la note et la référence au verso ;
-- extraction par IA du vocabulaire et des tournures intéressantes, avec relecture avant export.
+- extraction par IA du vocabulaire et des tournures intéressantes, avec relecture avant export ; chaque passage
+  analysé est gardé en cache, et la case « Réanalyser les passages déjà analysés » force une nouvelle analyse.
 
 **Exports**
 

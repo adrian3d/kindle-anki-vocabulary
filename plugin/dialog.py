@@ -539,9 +539,9 @@ class ExtractWorker(QThread):
     progress = pyqtSignal(int, int)
     done = pyqtSignal(list, str)
 
-    def __init__(self, llm, passages, target, cache):
+    def __init__(self, llm, passages, target, cache, refresh):
         super().__init__()
-        self.llm, self.passages, self.target, self.cache = llm, passages, target, cache
+        self.llm, self.passages, self.target, self.cache, self.refresh = llm, passages, target, cache, refresh
         self.cancelled = False
 
     def run(self):
@@ -549,7 +549,7 @@ class ExtractWorker(QThread):
         try:
             cards = flashcards.extract_flashcards(
                 self.llm, self.passages, self.target, translators.language_name(self.target), self.cache,
-                self.progress.emit, lambda: self.cancelled,
+                self.progress.emit, lambda: self.cancelled, self.refresh,
             )
         except translators.TranslationError as exception:
             error = str(exception)
@@ -875,10 +875,11 @@ class HighlightsTab(QWidget):
         for key, label in LLM_PROVIDERS:
             self.provider.addItem(label, key)
         self.provider.setCurrentIndex(max(self.provider.findData(prefs['extract_provider']), 0))
+        self.refresh_cards = QCheckBox('Réanalyser les passages déjà analysés')
         extract = QPushButton('Extraire vocabulaire et tournures…')
         extract.clicked.connect(self.extract)
         ai_row = QHBoxLayout()
-        for widget in (QLabel('Flashcards par IA : ma langue'), self.target, QLabel('avec'), self.provider):
+        for widget in (QLabel('Flashcards par IA : ma langue'), self.target, QLabel('avec'), self.provider, self.refresh_cards):
             ai_row.addWidget(widget)
         ai_row.addStretch(1)
         ai_row.addWidget(extract)
@@ -980,7 +981,9 @@ class HighlightsTab(QWidget):
         progress.setMinimumDuration(0)
         progress.setValue(0)
 
-        self.worker = ExtractWorker(make_translator(provider), passages, self.target.currentData(), self.cache)
+        self.worker = ExtractWorker(
+            make_translator(provider), passages, self.target.currentData(), self.cache, self.refresh_cards.isChecked(),
+        )
         self.worker.progress.connect(lambda done, _total: progress.setValue(done))
         self.worker.done.connect(lambda cards, error: self.on_extracted(progress, cards, error))
         progress.canceled.connect(lambda: setattr(self.worker, 'cancelled', True))

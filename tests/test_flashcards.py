@@ -96,6 +96,19 @@ def test_it_drops_cards_whose_excerpt_is_not_in_the_passage(tmp_path):
     assert [c.front for c in cards] == ['draw in a sharp breath', "can't help ..."]
 
 
+def test_it_asks_again_on_refresh_and_keeps_the_new_cards(tmp_path):
+    cache = TranslationCache(tmp_path / 'cache.sqlite3')
+    flashcards.extract_flashcards(FakeLlm([{'cards': [card(0, 'expression', 'so much as', 'ne serait-ce que')]}]),
+                                  PASSAGES[:1], 'fr', 'French', cache)
+
+    refreshed = FakeLlm([{'cards': [card(0, 'vocabulary', 'tracker', 'pisteur')]}])
+    first = flashcards.extract_flashcards(refreshed, PASSAGES[:1], 'fr', 'French', cache, refresh=True)
+    second = flashcards.extract_flashcards(FakeLlm([]), PASSAGES[:1], 'fr', 'French', cache)
+
+    assert len(refreshed.calls) == 1
+    assert [c.front for c in first] == [c.front for c in second] == ['tracker']
+
+
 def test_it_asks_again_when_the_prompt_changes(tmp_path, monkeypatch):
     cache = TranslationCache(tmp_path / 'cache.sqlite3')
     answer = {'cards': [card(0, 'expression', 'so much as', 'ne serait-ce que')]}
