@@ -120,6 +120,11 @@ comparée à une empreinte inscrite dans le plugin.
 Le mot de passe n'est pas conservé ; seul le jeton de session l'est. Si AnkiWeb réclame une synchronisation
 complète, qui écraserait un côté, rien n'est envoyé.
 
+Une carte déjà présente sur AnkiWeb n'est pas modifiée, sauf si la case « Remplacer les cartes déjà présentes »
+est cochée : elle prend alors le contenu envoyé (traduction, phrase, son) et rejoint le deck choisi, en gardant son
+historique de révision. Une carte envoyée par une version précédente du plugin, avec l'ancien type de note sans son,
+est supprimée puis recréée, et perd son historique.
+
 Quand des enregistrements sont envoyés, les médias de la collection sont synchronisés aussi. La première fois, la
 copie relais télécharge tous les médias du compte : l'envoi peut alors être long.
 

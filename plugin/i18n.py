@@ -322,16 +322,6 @@ ENGLISH = {
         '{count} note(s) imported into the "{deck}" deck on the phone.',
     'Connecté en tant que {user}.':
         'Logged in as {user}.',
-    'Remplacer les cartes déjà présentes avec un ancien type de note':
-        'Replace cards already there with an older note type',
-    "Ces cartes, envoyées par une version précédente du plugin, n'ont pas de son : elles sont supprimées puis recréées dans le deck choisi, et perdent leur historique de révision.":
-        'These cards, sent by an earlier version of the plugin, have no sound: they are deleted and created again in the chosen deck, and lose their review history.',
-    "Dont {count} remplaçant une carte d'un ancien type de note.":
-        'Including {count} replacing a card of an older note type.',
-    '{count} figuraient déjà dans la collection et restent dans leur deck.':
-        '{count} were already in the collection and stay in their deck.',
-    "{count} existent déjà avec un ancien type de note (deck « {decks} ») et n'ont pas été envoyées : cochez « Remplacer les cartes déjà présentes avec un ancien type de note » pour les remplacer.":
-        '{count} already exist with an older note type ("{decks}" deck) and were not sent: check "Replace cards already there with an older note type" to replace them.',
     'Écriture impossible : {error}':
         'Could not write the file: {error}',
     '{count} ligne(s) cochée(s) sans contenu exportable ont été ignorée(s).':
@@ -416,4 +406,14 @@ ENGLISH = {
         'Uncheck selected rows',
     'Maj+clic sur une case coche ou décoche toute la plage. Espace, ou le clic droit, coche ou décoche les lignes sélectionnées (Maj, Ctrl, Ctrl+A).':
         'Shift+click on a box checks or unchecks the whole range. Space, or a right click, checks or unchecks the selected rows (Shift, Ctrl, Ctrl+A).',
+    'Remplacer les cartes déjà présentes':
+        'Replace cards already there',
+    "Les cartes déjà dans la collection prennent le contenu envoyé (traduction, phrase, son) et rejoignent le deck choisi, en gardant leur historique de révision. Celles d'un ancien type de note, sans son, sont recréées et perdent leur historique.":
+        'Cards already in the collection take the content being sent (translation, sentence, sound) and move to the chosen deck, keeping their review history. Those of an older note type, without sound, are created again and lose their history.',
+    '{count} carte(s) déjà présente(s) remplacée(s) par la nouvelle version.':
+        '{count} card(s) already there replaced by the new version.',
+    "Dont {count} d'un ancien type de note, recréée(s) sans leur historique.":
+        'Including {count} of an older note type, created again without their history.',
+    '{count} déjà présente(s), laissée(s) telle(s) quelle(s) : cochez « Remplacer les cartes déjà présentes » pour les mettre à jour.':
+        '{count} already there, left as they were: check "Replace cards already there" to update them.',
 }

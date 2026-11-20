@@ -143,31 +143,40 @@ def test_it_uploads_the_pronunciations_with_the_cards(tmp_path, server):
     device.close()
 
 
-def test_it_reports_cards_of_an_older_note_type_and_replaces_them_on_request(tmp_path, server, monkeypatch):
+def test_it_leaves_cards_already_there_alone_unless_asked_to_replace_them(tmp_path, server, monkeypatch):
     from anki.collection import Collection
+
+    exports = iter(range(1795000000, 1795100000, 60))
+
+    def package(name, deck, **translations):
+        # Anki tient pour identique une note dont la date de modification n'a pas changé : chaque envoi a la sienne.
+        path = tmp_path / name
+        apkg.write_apkg(path, deck, [apkg.Note(f'en:{word}', word, text) for word, text in translations.items()],
+                        timestamp=next(exports))
+        return str(path)
 
     computer, account = connect(tmp_path, 'computer', server)
     with monkeypatch.context() as patch:
         patch.setattr(apkg, 'MODEL_ID', 1763596800002)
-        patch.setattr(apkg, 'MODEL_NAME', 'Kindle vocabulary')
-        computer.export(account, make_package(tmp_path, 'old.apkg', 'English vocabulary', 'give in', 'grin'))
+        computer.export(account, package('old.apkg', 'English vocabulary', sulk='bouder', grin='sourire'))
+    computer.export(account, package('a.apkg', 'English vocabulary', wart='verrue'))
 
-    skipped = computer.export(account, make_package(tmp_path, 'new.apkg', 'Test prononciation', 'give in', 'wart'))
+    kept = computer.export(account, package('b.apkg', 'Test', sulk='faire la tête', wart='poireau'), deck='Test')
 
-    assert (skipped['added'], skipped['conflicting'], skipped['conflicting_decks'], skipped['replaced']) == (
-        1, 1, ['English vocabulary'], 0)
+    assert (kept['added'], kept['replaced'], kept['unchanged']) == (0, 0, 2)
 
-    replaced = computer.export(account, make_package(tmp_path, 'again.apkg', 'Test prononciation', 'give in', 'wart'),
-                               replace_older=True)
+    replaced = computer.export(account, package('c.apkg', 'Test', sulk='faire la tête', wart='poireau', new='nouveau'),
+                               replace=True, deck='Test')
 
-    assert (replaced['added'], replaced['replaced'], replaced['existing'], replaced['conflicting']) == (1, 1, 1, 0)
+    assert (replaced['added'], replaced['replaced'], replaced['recreated'], replaced['unchanged']) == (1, 2, 1, 0)
     device = Collection(str(tmp_path / 'device.anki2'))
     auth = device.sync_login('reader', 'secret', server)
     device.sync_collection(auth, False)
     device.close_for_full_sync()
     device.full_upload_or_download(auth=auth, server_usn=None, upload=False)
     device.reopen(after_full_sync=True)
-    words = lambda search: sorted(device.get_note(nid)['Word'] for nid in device.find_notes(search))
-    assert words('deck:"Test prononciation"') == ['give in', 'wart']
-    assert words('deck:"English vocabulary"') == ['grin']
+    notes = lambda search: sorted((device.get_note(nid)['Word'], device.get_note(nid)['Translation'])
+                                  for nid in device.find_notes(search))
+    assert notes('deck:Test') == [('new', 'nouveau'), ('sulk', 'faire la tête'), ('wart', 'poireau')]
+    assert notes('deck:"English vocabulary"') == [('grin', 'sourire')]
     device.close()

@@ -511,10 +511,10 @@ class AnkiWebDialog(SendDialog):
         account_layout.addWidget(self.account_status)
         account_layout.addLayout(credentials)
 
-        self.replace_older = QCheckBox(_('Remplacer les cartes déjà présentes avec un ancien type de note'))
-        self.replace_older.setToolTip(_('Ces cartes, envoyées par une version précédente du plugin, n\'ont pas de son : '
-                                        'elles sont supprimées puis recréées dans le deck choisi, et perdent leur '
-                                        'historique de révision.'))
+        self.replace = QCheckBox(_('Remplacer les cartes déjà présentes'))
+        self.replace.setToolTip(_('Les cartes déjà dans la collection prennent le contenu envoyé (traduction, phrase, son) '
+                                  'et rejoignent le deck choisi, en gardant leur historique de révision. Celles d\'un '
+                                  'ancien type de note, sans son, sont recréées et perdent leur historique.'))
 
         notice = QLabel(_('Les cartes sont ajoutées à votre collection en ligne ; vos appareils les reçoivent à leur prochaine '
                           'synchronisation. Au premier usage, le plugin télécharge une fois les bibliothèques officielles Anki '
@@ -522,7 +522,7 @@ class AnkiWebDialog(SendDialog):
         notice.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        for widget in (self.summary, account, self.chooser, self.reverse, self.replace_older, notice):
+        for widget in (self.summary, account, self.chooser, self.reverse, self.replace, notice):
             layout.addWidget(widget)
         layout.addLayout(self.buttons)
 
@@ -582,12 +582,12 @@ class AnkiWebDialog(SendDialog):
 
     def send(self):
         deck, reverse, account = self.chooser.deck_name(), self.reverse.isChecked(), self.account()
-        replace_older = self.replace_older.isChecked()
+        replace = self.replace.isChecked()
         self.remember(deck)
         self.run(
             lambda on_step: with_temporary_package(
                 deck, self.notes, reverse, self.audio, on_step,
-                lambda path, has_media: self.client.export(account, path, on_step, has_media, replace_older)),
+                lambda path, has_media: self.client.export(account, path, on_step, has_media, replace, deck)),
             lambda result: self.on_sent(deck, result),
             N_('Préparation du paquet…'),
         )
@@ -596,14 +596,13 @@ class AnkiWebDialog(SendDialog):
         self.on_decks(result)
         parts = [_('{count} nouvelle(s) note(s) ajoutée(s) au deck « {deck} » sur AnkiWeb.').format(count=result['added'], deck=deck)]
         if result['replaced']:
-            parts.append(_('Dont {count} remplaçant une carte d\'un ancien type de note.').format(count=result['replaced']))
-        if result['existing']:
-            parts.append(_('{count} figuraient déjà dans la collection et restent dans leur deck.').format(count=result['existing']))
-        if result['conflicting']:
-            parts.append(_('{count} existent déjà avec un ancien type de note (deck « {decks} ») et n\'ont pas été envoyées : '
-                           'cochez « Remplacer les cartes déjà présentes avec un ancien type de note » pour les remplacer.').format(
-                count=result['conflicting'], decks=', '.join(result['conflicting_decks'])))
-        if result['added']:
+            parts.append(_('{count} carte(s) déjà présente(s) remplacée(s) par la nouvelle version.').format(count=result['replaced']))
+        if result['recreated']:
+            parts.append(_('Dont {count} d\'un ancien type de note, recréée(s) sans leur historique.').format(count=result['recreated']))
+        if result['unchanged']:
+            parts.append(_('{count} déjà présente(s), laissée(s) telle(s) quelle(s) : cochez « Remplacer les cartes déjà '
+                           'présentes » pour les mettre à jour.').format(count=result['unchanged']))
+        if result['added'] or result['replaced']:
             parts.append(_('Synchronisez AnkiDroid pour les recevoir.'))
         self.progress.setText(' '.join(parts))
 

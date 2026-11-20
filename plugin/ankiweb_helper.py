@@ -49,18 +49,26 @@ def list_decks(request):
 
 def export(request):
     from anki.collection import ImportAnkiPackageOptions, ImportAnkiPackageRequest
+    from anki.import_export_pb2 import ImportAnkiPackageUpdateCondition
 
     col, auth = open_synced(request)
     try:
         emit(step=N_('Ajout des cartes…'))
+        replace = bool(request.get('replace'))
         older = older_notes(col, request['package'])
-        replaced = 0
-        if request.get('replace_older') and older:
+        recreated = 0
+        if replace and older:
             # Convertir ces notes au nouveau type forcerait une synchronisation complète ; les supprimer, non.
-            col.remove_notes(list(older))
-            replaced, older = len(older), {}
-        log = col.import_anki_package(
-            ImportAnkiPackageRequest(package_path=request['package'], options=ImportAnkiPackageOptions())).log
+            col.remove_notes(older)
+            recreated = len(older)
+        condition = (ImportAnkiPackageUpdateCondition.IMPORT_ANKI_PACKAGE_UPDATE_CONDITION_ALWAYS if replace
+                     else ImportAnkiPackageUpdateCondition.IMPORT_ANKI_PACKAGE_UPDATE_CONDITION_NEVER)
+        log = col.import_anki_package(ImportAnkiPackageRequest(
+            package_path=request['package'], options=ImportAnkiPackageOptions(update_notes=condition))).log
+        if replace and log.updated and request.get('deck'):
+            # Anki met à jour une note existante sans déplacer ses cartes : on les range dans le deck choisi.
+            cards = [card for entry in log.updated for card in col.card_ids_of_note(entry.id.nid)]
+            col.set_deck(cards, col.decks.id_for_name(request['deck']))
 
         emit(step=N_('Envoi vers AnkiWeb…'))
         required = synchronize(col, auth)
@@ -76,9 +84,8 @@ def export(request):
             emit(step=N_('Envoi des prononciations vers AnkiWeb…'))
             sync_media(col, auth)
         return {
-            'added': len(log.new), 'existing': len(log.updated) + len(log.duplicate), 'replaced': replaced,
-            'conflicting': len(log.conflicting), 'conflicting_decks': sorted(set(older.values())),
-            'endpoint': auth.endpoint, 'decks': deck_names(col),
+            'added': len(log.new) - recreated, 'replaced': len(log.updated) + recreated, 'recreated': recreated,
+            'unchanged': len(log.duplicate) + len(log.conflicting), 'endpoint': auth.endpoint, 'decks': deck_names(col),
         }
     finally:
         col.close()
@@ -88,12 +95,8 @@ def older_notes(col, package):
     # Anki n'importe pas une note dont l'identifiant existe déjà avec un autre type de note : il la classe en conflit.
     guids, notetype = package_notes(package)
     if not guids:
-        return {}
-    marks = ','.join('?' * len(guids))
-    rows = col.db.all(
-        f'SELECT n.id, MIN(d.name) FROM notes n JOIN cards c ON c.nid = n.id JOIN decks d ON d.id = c.did '
-        f'WHERE n.guid IN ({marks}) AND n.mid != ? GROUP BY n.id', *guids, notetype)
-    return {note_id: deck for note_id, deck in rows}
+        return []
+    return col.db.list(f'SELECT id FROM notes WHERE guid IN ({",".join("?" * len(guids))}) AND mid != ?', *guids, notetype)
 
 
 def package_notes(package):

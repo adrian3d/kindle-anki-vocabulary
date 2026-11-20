@@ -117,9 +117,9 @@ class AnkiWeb:
     def list_decks(self, account, on_step=lambda message: None):
         return self._call({'action': 'decks', **account}, on_step)
 
-    def export(self, account, package, on_step=lambda message: None, media=False, replace_older=False):
-        return self._call({'action': 'export', 'package': package, 'media': media, 'replace_older': replace_older, **account},
-                          on_step)
+    def export(self, account, package, on_step=lambda message: None, media=False, replace=False, deck=''):
+        request = {'action': 'export', 'package': package, 'media': media, 'replace': replace, 'deck': deck}
+        return self._call({**request, **account}, on_step)
 
     def forget(self):
         shutil.rmtree(os.path.join(self.directory, 'mirror'), ignore_errors=True)
