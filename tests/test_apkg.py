@@ -29,7 +29,7 @@ def test_it_writes_notes_and_cards_in_the_named_deck(tmp_path):
     deck_id = next(int(key) for key, deck in json.loads(decks).items() if deck['name'] == 'English vocabulary')
     fields = conn.execute('SELECT flds FROM notes ORDER BY id').fetchall()
     assert [field['name'] for field in json.loads(models)[str(apkg.MODEL_ID)]['flds']] == list(apkg.FIELDS)
-    assert fields[0][0].split('\x1f') == ['stench', 'puanteur', 'free of that rotting <b>stench</b>', 'Siege &amp; Storm', '', '1']
+    assert fields[0][0].split('\x1f') == ['stench', 'puanteur', 'free of that rotting <b>stench</b>', 'Siege &amp; Storm', '', '1', '']
     assert fields[1][0].split('\x1f')[2] == 'his &lt;black&gt; kefta <b>billowing</b> around him'
     assert conn.execute('SELECT tags FROM notes ORDER BY id').fetchone()[0] == ' kindle siege-storm '
     assert conn.execute('SELECT did, ord FROM cards ORDER BY id').fetchall() == [(deck_id, 0), (deck_id, 1)] * 2
@@ -78,10 +78,39 @@ def test_it_formats_a_highlighted_passage_as_a_quote(tmp_path):
     conn = read_collection(tmp_path / 'deck.apkg', tmp_path)
     fields = conn.execute('SELECT flds, sfld FROM notes').fetchone()
     expected = '<div class="passage">La peur tue<br>l\'esprit &lt;vite&gt;.</div>'
-    assert fields[0].split('\x1f') == [expected, 'Dune', '', 'Dune', 'p. 12', '']
+    assert fields[0].split('\x1f') == [expected, 'Dune', '', 'Dune', 'p. 12', '', '']
     assert fields[1] == 'La peur tue\nl\'esprit <vite>.'
     assert conn.execute('SELECT ord FROM cards').fetchall() == [(0,)]
     assert next(csv.reader((tmp_path / 'deck.csv').read_text(encoding='utf-8').splitlines()[5:]))[:2] == [expected, 'Dune']
+
+
+def test_it_packages_recordings_and_falls_back_on_speech_synthesis(tmp_path):
+    media_dir = tmp_path / 'audio'
+    media_dir.mkdir()
+    (media_dir / 'kindle-en-1.ogg').write_bytes(b'OggS')
+    notes = [
+        Note('en:stench', 'stench', 'puanteur', lang='en', audio='kindle-en-1.ogg'),
+        Note('en:wreak', 'wreak <havoc>', 'semer le chaos', lang='en'),
+        Note('fr:banquise', 'banquise', 'pack ice', lang='xx'),
+        Note('passage:1', 'La peur tue.', 'Dune', passage=True, lang='fr'),
+    ]
+
+    apkg.write_apkg(tmp_path / 'deck.apkg', 'Deck', notes, media_dir=media_dir)
+
+    with zipfile.ZipFile(tmp_path / 'deck.apkg') as package:
+        assert json.loads(package.read('media')) == {'0': 'kindle-en-1.ogg'}
+        assert package.read('0') == b'OggS'
+        package.extract('collection.anki2', tmp_path)
+    conn = sqlite3.connect(tmp_path / 'collection.anki2')
+    audio = [row[0].split('\x1f')[-1] for row in conn.execute('SELECT flds FROM notes ORDER BY id')]
+    assert audio == [
+        '[sound:kindle-en-1.ogg]',
+        '[anki:tts lang=en_US]wreak &lt;havoc&gt;[/anki:tts]',
+        '[anki:tts lang=xx]banquise[/anki:tts]',
+        '',
+    ]
+    models = json.loads(conn.execute('SELECT models FROM col').fetchone()[0])
+    assert '{{Audio}}' in models[str(apkg.MODEL_ID)]['tmpls'][0]['qfmt']
 
 
 def test_it_highlights_whole_words_only():

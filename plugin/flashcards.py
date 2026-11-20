@@ -14,13 +14,14 @@ SCHEMA = {
                 'type': 'object',
                 'properties': {
                     'passage_id': {'type': 'integer'},
+                    'language': {'type': 'string'},
                     'kind': {'type': 'string', 'enum': list(KINDS)},
                     'excerpt': {'type': 'string'},
                     'front': {'type': 'string'},
                     'back': {'type': 'string'},
                     'note': {'type': 'string'},
                 },
-                'required': ['passage_id', 'kind', 'excerpt', 'front', 'back', 'note'],
+                'required': ['passage_id', 'language', 'kind', 'excerpt', 'front', 'back', 'note'],
                 'additionalProperties': False,
             },
         }
@@ -39,6 +40,7 @@ class Flashcard:
     note: str
     sentence: str
     book: str
+    language: str = ''
 
 
 def instructions(language):
@@ -52,6 +54,7 @@ def instructions(language):
         f'Skip basic words, proper nouns and invented words. Return at most {MAX_CARDS_PER_PASSAGE} cards per passage, '
         'and none when nothing is worth learning.\n'
         'For each card:\n'
+        '- "language": the ISO 639-1 code of the language of the passage, for example "en".\n'
         '- "excerpt": the words of the passage the card is about, copied exactly as they appear in the passage.\n'
         '- "front": the same words, still in the language of the passage: never translate them. In lowercase, except '
         'for proper nouns. The dictionary form for a word (infinitive, singular); for an expression, a short reusable '
@@ -114,7 +117,9 @@ def _make_card(entry, passage):
     # Un modèle de traduction traduit aussi le recto : un extrait absent du passage trahit une carte inventée.
     if _normalize(excerpt) not in _normalize(passage.text):
         return None
-    return Flashcard(entry['kind'], excerpt, front, back, (entry.get('note') or '').strip(), passage.text, passage.book)
+    language = (entry.get('language') or '').strip().lower()[:2]
+    return Flashcard(entry['kind'], excerpt, front, back, (entry.get('note') or '').strip(), passage.text, passage.book,
+                     language if language.isalpha() else '')
 
 
 def _normalize(text):

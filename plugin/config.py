@@ -23,6 +23,8 @@ prefs.defaults['provider'] = 'wiktionary'
 prefs.defaults['extract_provider'] = 'claude'
 prefs.defaults['deck_name'] = 'Kindle vocabulary'
 prefs.defaults['reverse'] = True
+prefs.defaults['audio'] = True
+prefs.defaults['wikimedia_contact'] = ''
 prefs.defaults['export_format'] = 'apkg'
 prefs.defaults['ankiweb_user'] = ''
 prefs.defaults['ankiweb_hkey'] = ''
@@ -44,6 +46,12 @@ def data_dir():
 
 def make_cache():
     return TranslationCache(os.path.join(data_dir(), 'translations.sqlite3'))
+
+
+def make_pronunciations():
+    from calibre_plugins.kindle_vocab_anki.audio import Pronunciations
+
+    return Pronunciations(os.path.join(data_dir(), 'audio'), make_cache(), contact=prefs['wikimedia_contact'].strip())
 
 
 def make_ankiweb():
@@ -89,6 +97,8 @@ class ConfigWidget(QWidget):
         self.ollama_model.setEditable(True)
         self.ollama_model.setCurrentText(prefs['ollama_model'])
         self.ollama_status = QLabel('')
+        self.wikimedia_contact = QLineEdit(prefs['wikimedia_contact'])
+        self.wikimedia_contact.setPlaceholderText('Adresse e-mail ou page web')
 
         refresh = QPushButton('Lister les modèles')
         refresh.clicked.connect(self.refresh_ollama_models)
@@ -102,6 +112,11 @@ class ConfigWidget(QWidget):
         layout.addRow('Adresse d\'Ollama', self.ollama_url)
         layout.addRow('Modèle Ollama', ollama_row)
         layout.addRow('', self.ollama_status)
+        layout.addRow('Contact pour Wikimedia', self.wikimedia_contact)
+        contact_help = QLabel('Les prononciations viennent de Wikimedia, qui refuse souvent les téléchargements des '
+                              'programmes sans contact : ce contact est joint à chaque requête.')
+        contact_help.setWordWrap(True)
+        layout.addRow('', contact_help)
         layout.addRow(QLabel('Les clés sont enregistrées en clair dans le dossier de configuration de calibre.'))
 
     @staticmethod
@@ -128,3 +143,4 @@ class ConfigWidget(QWidget):
         prefs['deepl_api_key'] = self.deepl_api_key.text().strip()
         prefs['ollama_url'] = self.ollama_url.text().strip() or translators.OLLAMA_URL
         prefs['ollama_model'] = self.ollama_model.currentText().strip()
+        prefs['wikimedia_contact'] = self.wikimedia_contact.text().strip()

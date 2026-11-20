@@ -32,8 +32,8 @@ class FakeLlm:
         return self.answers.pop(0)
 
 
-def card(passage_id, kind, front, back, note='', excerpt=None):
-    return {'passage_id': passage_id, 'kind': kind, 'excerpt': front if excerpt is None else excerpt,
+def card(passage_id, kind, front, back, note='', excerpt=None, language='en'):
+    return {'passage_id': passage_id, 'language': language, 'kind': kind, 'excerpt': front if excerpt is None else excerpt,
             'front': front, 'back': back, 'note': note}
 
 
@@ -41,7 +41,7 @@ def test_it_extracts_cards_per_passage_and_keeps_their_sentence(tmp_path):
     llm = FakeLlm([
         {'cards': [
             card(0, 'expression', 'so much as', 'ne serait-ce que', 'Renforce une condition.'),
-            card(1, 'vocabulary', 'dizziness', 'vertige'),
+            card(1, 'vocabulary', 'dizziness', 'vertige', language='EN-gb'),
             card(1, 'vocabulary', 'to stumble', 'trébucher', excerpt='stumbled'),
         ]},
         {'cards': []},
@@ -59,6 +59,7 @@ def test_it_extracts_cards_per_passage_and_keeps_their_sentence(tmp_path):
     ]
     assert cards[1].sentence == 'I willed the dizziness away, shook her off, then stumbled.'
     assert cards[2].excerpt == 'stumbled'
+    assert [c.language for c in cards] == ['en', 'en', 'en']
     assert cards[0].book == 'Siege and Storm'
     assert progress == [(0, 3), (2, 3), (3, 3)]
     assert [entry['id'] for entry in llm.calls[0]['user']] == [0, 1]

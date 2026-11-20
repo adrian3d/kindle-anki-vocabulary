@@ -35,6 +35,16 @@ Il lit deux fichiers de la liseuse :
 
 Chaque note porte un identifiant stable : réexporter les mêmes mots ne crée pas de doublon.
 
+**Prononciation**
+
+Avec la case « Prononciation », chaque mot (ou flashcard extraite par IA) reçoit un son : l'enregistrement de
+[Wiktionary](https://en.wiktionary.org/) quand il existe (voix humaine, accent américain de préférence), sinon la
+voix de synthèse de l'appareil qui affiche la carte. Les enregistrements sont téléchargés une fois puis gardés en
+cache. Le son est joué au recto de la carte mot → traduction et au verso de la carte inverse.
+
+Le son passe par le `.apkg` et le téléphone, pas par le CSV. Les cartes avec son utilisent le type de note
+« Kindle vocabulary (audio) » : les cartes déjà importées avec l'ancien type ne reçoivent pas de son.
+
 ## Sources de traduction
 
 | Source | Réglage | Particularité |
@@ -88,6 +98,8 @@ GitHub Actions lance alors les tests, construit le fichier installable et publie
 3. Exporter dans un fichier, vers le téléphone ou vers AnkiWeb.
 
 Les clés d'API, le modèle Claude et le serveur Ollama se règlent dans « Préférences… », en bas de la fenêtre.
+Le « Contact pour Wikimedia » (adresse e-mail ou page web) est joint aux téléchargements de prononciations :
+sans lui, Wikimedia en refuse une bonne partie et la voix de synthèse prend le relais.
 
 ### Envoi au téléphone
 
@@ -109,12 +121,13 @@ complète, qui écraserait un côté, rien n'est envoyé.
 Dans le dossier de configuration de calibre, sous `plugins/` :
 
 - `kindle_vocab_anki.json` : réglages, clés d'API et jeton AnkiWeb, **en clair** ;
-- `kindle_vocab_anki/` : cache des traductions, dictionnaires, bibliothèques Anki et copie relais de la collection.
+- `kindle_vocab_anki/` : cache des traductions, dictionnaires, prononciations, bibliothèques Anki et copie relais de
+  la collection.
 
 ## Développement
 
-Les modules sans dépendance à calibre (`vocab`, `clippings`, `translators`, `flashcards`, `apkg`, `phone`,
-`ankiweb`, `cache`) se testent hors de calibre :
+Les modules sans dépendance à calibre (`vocab`, `clippings`, `translators`, `flashcards`, `apkg`, `audio`,
+`phone`, `ankiweb`, `cache`) se testent hors de calibre :
 
 ```bash
 uv run --no-project --with pytest --with anki pytest tests

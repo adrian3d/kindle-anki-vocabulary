@@ -2,6 +2,7 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+from dataclasses import replace
 
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, info_dialog, question_dialog
 from qt.core import (
@@ -12,7 +13,7 @@ from qt.core import (
 
 from calibre_plugins.kindle_vocab_anki import ankiweb, apkg, clippings, flashcards, phone, translators, vocab
 from calibre_plugins.kindle_vocab_anki.config import (
-    LLM_PROVIDERS, PROVIDERS, make_ankiweb, make_cache, make_translator, prefs,
+    LLM_PROVIDERS, PROVIDERS, make_ankiweb, make_cache, make_pronunciations, make_translator, prefs,
 )
 
 CONFIRMATION_THRESHOLD = 200
@@ -156,12 +157,26 @@ class TaskWorker(QThread):
         self.done.emit(result, error)
 
 
-def with_temporary_package(deck, notes, reverse, use):
+def write_package(path, deck, notes, reverse, audio, on_step):
+    if not audio:
+        apkg.write_apkg(path, deck, [replace(note, lang='', audio='') for note in notes], reverse)
+        return False
+    pronunciations = make_pronunciations()
+    files = pronunciations.fetch_all(
+        ((note.word, note.lang) for note in notes if not note.passage),
+        lambda done, total: on_step(f'Prononciations Wiktionary : {done}/{total}…'),
+    )
+    notes = [replace(note, audio=files.get((note.word, note.lang), '')) for note in notes]
+    apkg.write_apkg(path, deck, notes, reverse, media_dir=pronunciations.directory)
+    return any(note.audio for note in notes)
+
+
+def with_temporary_package(deck, notes, reverse, audio, on_step, use):
     handle, path = tempfile.mkstemp(suffix='.apkg')
     os.close(handle)
     try:
-        apkg.write_apkg(path, deck, notes, reverse)
-        return use(path)
+        has_media = write_package(path, deck, notes, reverse, audio, on_step)
+        return use(path, has_media)
     finally:
         os.remove(path)
 
@@ -212,9 +227,9 @@ class DeckChooser(QGroupBox):
 class SendDialog(QDialog):
     title = ''
 
-    def __init__(self, parent, notes, skipped, reverse_allowed, destination, existing_label):
+    def __init__(self, parent, notes, skipped, reverse_allowed, audio, destination, existing_label):
         super().__init__(parent)
-        self.notes, self.worker, self.reverse_allowed = notes, None, reverse_allowed
+        self.notes, self.worker, self.reverse_allowed, self.audio = notes, None, reverse_allowed, audio
         self.setWindowTitle(self.title)
         self.setMinimumWidth(580)
 
@@ -279,8 +294,8 @@ class SendDialog(QDialog):
 class PhoneDialog(SendDialog):
     title = 'Envoyer au téléphone'
 
-    def __init__(self, parent, notes, skipped, reverse_allowed=True):
-        super().__init__(parent, notes, skipped, reverse_allowed, 'AnkiDroid, par le câble USB',
+    def __init__(self, parent, notes, skipped, reverse_allowed=True, audio=False):
+        super().__init__(parent, notes, skipped, reverse_allowed, audio, 'AnkiDroid, par le câble USB',
                          'Ajouter à un deck existant du téléphone :')
         self.connected = False
         self.phone_status = QLabel('')
@@ -319,7 +334,8 @@ class PhoneDialog(SendDialog):
         self.remember(deck)
         self.run(
             lambda on_step: with_temporary_package(
-                deck, self.notes, reverse, lambda path: phone.connect().send_package(path, on_step)),
+                deck, self.notes, reverse, self.audio, on_step,
+                lambda path, _has_media: phone.connect().send_package(path, on_step)),
             lambda outcome: self.on_sent(deck, outcome),
         )
 
@@ -334,8 +350,8 @@ class PhoneDialog(SendDialog):
 class AnkiWebDialog(SendDialog):
     title = 'Envoyer vers AnkiWeb'
 
-    def __init__(self, parent, notes, skipped, reverse_allowed=True):
-        super().__init__(parent, notes, skipped, reverse_allowed, 'votre compte AnkiWeb, directement depuis cet ordinateur',
+    def __init__(self, parent, notes, skipped, reverse_allowed=True, audio=False):
+        super().__init__(parent, notes, skipped, reverse_allowed, audio, 'votre compte AnkiWeb, directement depuis cet ordinateur',
                          'Ajouter à un deck existant du compte :')
         self.client = make_ankiweb()
 
@@ -427,7 +443,8 @@ class AnkiWebDialog(SendDialog):
         self.remember(deck)
         self.run(
             lambda on_step: with_temporary_package(
-                deck, self.notes, reverse, lambda path: self.client.export(account, path, on_step)),
+                deck, self.notes, reverse, self.audio, on_step,
+                lambda path, has_media: self.client.export(account, path, on_step, has_media)),
             lambda result: self.on_sent(deck, result),
         )
 
@@ -440,9 +457,9 @@ class AnkiWebDialog(SendDialog):
         self.progress.setText(message + ' Synchronisez AnkiDroid pour les recevoir.')
 
 class ExportBar(QWidget):
-    def __init__(self, collect_notes, reverse_allowed=True):
+    def __init__(self, collect_notes, reverse_allowed=True, audio_allowed=True):
         super().__init__()
-        self.collect_notes, self.reverse_allowed = collect_notes, reverse_allowed
+        self.collect_notes, self.reverse_allowed, self.audio_allowed, self.worker = collect_notes, reverse_allowed, audio_allowed, None
         self.deck = QLineEdit(prefs['deck_name'])
         self.format = QComboBox()
         for key, label in EXPORT_FORMATS:
@@ -452,6 +469,11 @@ class ExportBar(QWidget):
         self.reverse.setChecked(prefs['reverse'] and reverse_allowed)
         self.reverse.setVisible(reverse_allowed)
         self.reverse.setToolTip('Paquet .apkg uniquement : en CSV, le sens des cartes dépend du type de note choisi dans Anki.')
+        self.audio = QCheckBox('Prononciation')
+        self.audio.setChecked(prefs['audio'] and audio_allowed)
+        self.audio.setVisible(audio_allowed)
+        self.audio.setToolTip('Paquet .apkg, téléphone et AnkiWeb : enregistrement de Wiktionary quand il existe, '
+                              'sinon voix de synthèse de l\'appareil qui affiche la carte.')
         self.format.currentIndexChanged.connect(self.on_format_changed)
         self.on_format_changed()
         export = QPushButton('Exporter…')
@@ -466,7 +488,7 @@ class ExportBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         widgets = ((QLabel('Exporter dans un fichier : deck'), 0), (self.deck, 1), (self.format, 0), (self.reverse, 0),
-                   (export, 0), (send, 0), (send_ankiweb, 0))
+                   (self.audio, 0), (export, 0), (send, 0), (send_ankiweb, 0))
         for widget, stretch in widgets:
             layout.addWidget(widget, stretch)
 
@@ -484,29 +506,54 @@ class ExportBar(QWidget):
                                 initial_filename=f'{deck}.{file_format}')
         if not path:
             return
-        try:
-            if file_format == 'csv':
+        if file_format == 'csv':
+            try:
                 apkg.write_csv(path, deck, notes)
-            else:
-                apkg.write_apkg(path, deck, notes, self.reverse.isChecked())
-        except OSError as error:
-            error_dialog(self, 'Export Anki', f'Écriture impossible : {error}', show=True)
+            except OSError as error:
+                error_dialog(self, 'Export Anki', f'Écriture impossible : {error}', show=True)
+                return
+            self.on_exported(path, deck, file_format, len(notes), skipped)
             return
 
+        progress = QProgressDialog('Préparation du paquet…', '', 0, 0, self)
+        progress.setCancelButton(None)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        reverse, audio = self.reverse.isChecked(), self.audio.isChecked()
+        self.worker = TaskWorker(lambda on_step: write_package(path, deck, notes, reverse, audio, on_step))
+        self.worker.step.connect(progress.setLabelText)
+        self.worker.done.connect(lambda _result, error: self.on_package_written(progress, error, path, deck, len(notes), skipped))
+        self.worker.start()
+
+    def on_package_written(self, progress, error, path, deck, count, skipped):
+        progress.reset()
+        if error:
+            error_dialog(self, 'Export Anki', f'Écriture impossible : {error}', show=True)
+            return
+        self.on_exported(path, deck, 'apkg', count, skipped)
+
+    def on_exported(self, path, deck, file_format, count, skipped):
         prefs['deck_name'], prefs['export_format'] = deck, file_format
-        if self.reverse_allowed:
-            prefs['reverse'] = self.reverse.isChecked()
-        message = f'{len(notes)} note(s) exportée(s) dans {path}.'
+        self.remember_options()
+        message = f'{count} note(s) exportée(s) dans {path}.'
         if skipped:
             message += f'\n{skipped} ligne(s) cochée(s) sans contenu exportable ont été ignorée(s).'
         info_dialog(self, 'Export Anki', message, show=True)
+
+    def remember_options(self):
+        if self.reverse_allowed:
+            prefs['reverse'] = self.reverse.isChecked()
+        if self.audio_allowed:
+            prefs['audio'] = self.audio.isChecked()
 
     def open_send_dialog(self, dialog_class):
         notes, skipped = self.collect_notes()
         if not notes:
             error_dialog(self, dialog_class.title, 'Rien à envoyer : cochez au moins une ligne exportable.', show=True)
             return
-        dialog_class(self, notes, skipped, self.reverse_allowed).exec()
+        if self.audio_allowed:
+            prefs['audio'] = self.audio.isChecked()
+        dialog_class(self, notes, skipped, self.reverse_allowed, self.audio.isChecked()).exec()
 
 class TranslateWorker(QThread):
     progress = pyqtSignal(int, int)
@@ -609,7 +656,7 @@ class CardsDialog(QDialog):
             notes.append(apkg.Note(
                 f'highlight:{front.lower()}', front, back, card.sentence, card.excerpt, card.book,
                 ('kindle', 'surlignage', KIND_LABELS[card.kind].lower(), apkg.make_tag(card.book)),
-                self.table.item(row, CARD_NOTE).text().strip(),
+                self.table.item(row, CARD_NOTE).text().strip(), lang=card.language,
             ))
         return notes
 
@@ -828,7 +875,7 @@ class VocabTab(QWidget):
         checked = self.checked_words()
         notes = [
             apkg.Note(word.key, word.stem, self.translations[word.key], word.usage, word.word, word.book,
-                      ('kindle', word.lang, apkg.make_tag(word.book)))
+                      ('kindle', word.lang, apkg.make_tag(word.book)), lang=word.lang)
             for word in checked if self.translations.get(word.key)
         ]
         return notes, len(checked) - len(notes)
@@ -866,7 +913,7 @@ class HighlightsTab(QWidget):
         for widget, stretch in ((check_all, 0), (uncheck_all, 0), (self.count, 1), (copy, 0), (export, 0)):
             actions.addWidget(widget, stretch)
 
-        self.export_bar = ExportBar(self.collect_notes, reverse_allowed=False)
+        self.export_bar = ExportBar(self.collect_notes, reverse_allowed=False, audio_allowed=False)
 
         self.target, self.provider = QComboBox(), QComboBox()
         for code, name in sorted(translators.LANGUAGES.items(), key=lambda entry: entry[1]):

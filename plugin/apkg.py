@@ -12,10 +12,25 @@ import zipfile
 from contextlib import closing
 from dataclasses import dataclass, field
 
-MODEL_ID = 1763596800002
-MODEL_NAME = 'Kindle vocabulary'
-FIELDS = ('Word', 'Translation', 'Sentence', 'Book', 'Note', 'Reverse')
+# Un nouveau type de note plutôt qu'un champ ajouté à l'ancien : modifier ses champs forcerait une
+# synchronisation complète avec AnkiWeb.
+MODEL_ID = 1763596800003
+MODEL_NAME = 'Kindle vocabulary (audio)'
+FIELDS = ('Word', 'Translation', 'Sentence', 'Book', 'Note', 'Reverse', 'Audio')
+CSV_FIELDS = 5
 FIELD_SEPARATOR = '\x1f'
+
+TTS_LOCALES = {
+    'en': 'en_US', 'fr': 'fr_FR', 'de': 'de_DE', 'es': 'es_ES', 'it': 'it_IT', 'pt': 'pt_PT', 'nl': 'nl_NL',
+    'sv': 'sv_SE', 'da': 'da_DK', 'nb': 'nb_NO', 'pl': 'pl_PL', 'cs': 'cs_CZ', 'ru': 'ru_RU', 'uk': 'uk_UA',
+    'ja': 'ja_JP', 'zh': 'zh_CN', 'ko': 'ko_KR', 'tr': 'tr_TR', 'el': 'el_GR', 'fi': 'fi_FI', 'hu': 'hu_HU',
+    'ro': 'ro_RO', 'ca': 'ca_ES',
+}
+
+
+def tts_locale(lang):
+    return TTS_LOCALES.get(lang, lang)
+
 
 CSS = '''.card { font-family: sans-serif; font-size: 22px; text-align: center; color: #222; background: #fdfdfd; }
 .nightMode.card, .night_mode.card { color: #eee; background: #2b2b2b; }
@@ -33,13 +48,13 @@ DETAILS = '''{{#Sentence}}<div class="sentence">{{Sentence}}</div>{{/Sentence}}
 TEMPLATES = (
     {
         'name': 'Word → Translation',
-        'qfmt': '<div class="word">{{Word}}</div>{{#Sentence}}<div class="sentence">{{Sentence}}</div>{{/Sentence}}',
+        'qfmt': '<div class="word">{{Word}}</div>{{Audio}}{{#Sentence}}<div class="sentence">{{Sentence}}</div>{{/Sentence}}',
         'afmt': '<div class="word">{{Word}}</div><hr id="answer"><div>{{Translation}}</div>' + DETAILS,
     },
     {
         'name': 'Translation → Word',
         'qfmt': '{{#Reverse}}<div>{{Translation}}</div>{{/Reverse}}',
-        'afmt': '<div>{{Translation}}</div><hr id="answer"><div class="word">{{Word}}</div>' + DETAILS,
+        'afmt': '<div>{{Translation}}</div><hr id="answer"><div class="word">{{Word}}</div>{{Audio}}' + DETAILS,
     },
 )
 
@@ -110,10 +125,13 @@ class Note:
     tags: tuple = field(default_factory=tuple)
     note: str = ''
     passage: bool = False
+    lang: str = ''
+    audio: str = ''
 
 
-def write_apkg(path, deck_name, notes, reverse=True, timestamp=None):
+def write_apkg(path, deck_name, notes, reverse=True, timestamp=None, media_dir=None):
     timestamp = time.time() if timestamp is None else timestamp
+    media = sorted({note.audio for note in notes if note.audio and media_dir})
     handle, db_path = tempfile.mkstemp(suffix='.anki2')
     os.close(handle)
     try:
@@ -121,9 +139,22 @@ def write_apkg(path, deck_name, notes, reverse=True, timestamp=None):
             _write_collection(conn, deck_name, notes, reverse, timestamp)
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as package:
             package.write(db_path, 'collection.anki2')
-            package.writestr('media', '{}')
+            for index, filename in enumerate(media):
+                package.write(os.path.join(media_dir, filename), str(index))
+            package.writestr('media', json.dumps({str(index): filename for index, filename in enumerate(media)}))
     finally:
         os.remove(db_path)
+
+
+def audio_field(note):
+    if note.passage:
+        return ''
+    if note.audio:
+        return f'[sound:{note.audio}]'
+    if note.lang:
+        # Lu par la voix de synthèse de l'appareil quand Wiktionary n'a pas d'enregistrement.
+        return f'[anki:tts lang={tts_locale(note.lang)}]{html.escape(note.word, quote=False)}[/anki:tts]'
+    return ''
 
 
 def write_csv(path, deck_name, notes):
@@ -133,7 +164,7 @@ def write_csv(path, deck_name, notes):
         file.write(f'#deck:{deck_name}\n')
         # Pas d'en-tête #columns : sans noms, Anki associe les colonnes aux champs par position
         # (mot → recto, traduction → verso), alors qu'avec des noms inconnus il laisse le verso vide.
-        file.write(f'#tags column:{len(FIELDS)}\n#guid column:{len(FIELDS) + 1}\n')
+        file.write(f'#tags column:{CSV_FIELDS + 1}\n#guid column:{CSV_FIELDS + 2}\n')
         writer = csv.writer(file, lineterminator='\n')
         for note in notes:
             writer.writerow([*_fields(note), ' '.join(tag for tag in note.tags if tag), _guid(note.key)])
@@ -182,7 +213,7 @@ def _write_collection(conn, deck_name, notes, reverse, timestamp):
     ids = itertools.count(int(timestamp * 1000))
     for position, note in enumerate(notes):
         note_id = next(ids)
-        fields = (*_fields(note), '1' if reverse else '')
+        fields = (*_fields(note), '1' if reverse else '', audio_field(note))
         conn.execute(
             'INSERT INTO notes VALUES (?, ?, ?, ?, -1, ?, ?, ?, ?, 0, \'\')',
             (
