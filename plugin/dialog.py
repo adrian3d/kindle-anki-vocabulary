@@ -5,7 +5,7 @@ import tempfile
 
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, info_dialog, question_dialog
 from qt.core import (
-    QApplication, QCheckBox, QComboBox, QDate, QDateEdit, QDialog, QDialogButtonBox, QHBoxLayout, QHeaderView,
+    QApplication, QCheckBox, QComboBox, QDate, QDateEdit, QDialog, QDialogButtonBox, QEvent, QHBoxLayout, QHeaderView,
     QGroupBox, QLabel, QLineEdit, QProgressDialog, QPushButton, QRadioButton, Qt, QTableWidget, QTableWidgetItem, QTabWidget, QThread,
     QVBoxLayout, QWidget, pyqtSignal,
 )
@@ -60,6 +60,7 @@ class DateRange(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.latest, self.calendars = None, []
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.start_enabled, self.start = self._add_bound(layout, 'Du')
@@ -69,13 +70,28 @@ class DateRange(QWidget):
         enabled, edit = QCheckBox(label), QDateEdit(QDate.currentDate())
         edit.setCalendarPopup(True)
         edit.setDisplayFormat('dd/MM/yyyy')
-        edit.setEnabled(False)
-        enabled.toggled.connect(edit.setEnabled)
+        calendar = edit.calendarWidget()
+        calendar.installEventFilter(self)
+        self.calendars.append((calendar, enabled))
         enabled.toggled.connect(lambda _checked: self.changed.emit())
-        edit.dateChanged.connect(lambda _date: self.changed.emit())
+        edit.dateChanged.connect(lambda _date: self._on_date_changed(enabled))
         layout.addWidget(enabled)
         layout.addWidget(edit)
         return enabled, edit
+
+    def _on_date_changed(self, enabled):
+        if enabled.isChecked():
+            self.changed.emit()
+        else:
+            enabled.setChecked(True)
+
+    def eventFilter(self, watched, event):
+        # Le calendrier s'ouvre sur la date du champ, souvent le premier surlignage, des années plus tôt.
+        if event.type() == QEvent.Type.Show and self.latest:
+            for calendar, enabled in self.calendars:
+                if calendar is watched and not enabled.isChecked():
+                    calendar.setCurrentPage(self.latest.year, self.latest.month)
+        return False
 
     def bounds(self):
         return (
@@ -84,6 +100,7 @@ class DateRange(QWidget):
         )
 
     def set_span(self, first, last):
+        self.latest = last
         for enabled, edit, value in ((self.start_enabled, self.start, first), (self.end_enabled, self.end, last)):
             if value and not enabled.isChecked():
                 edit.blockSignals(True)
