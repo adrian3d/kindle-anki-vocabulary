@@ -37,9 +37,13 @@ jobs:
 
       - name: Extraire les notes de version du changelog
         run: |
+          # Les descriptions de release changent chaque retour à la ligne en saut de ligne : on recolle les puces.
           awk -v tag="$GITHUB_REF_NAME" '
             /^## / { inside = ($2 == tag) ; next }
-            inside { print }
+            !inside { next }
+            /^  [^ ]/ && line != "" { sub(/^ +/, ""); line = line " " $0 ; next }
+            { if (started) print line ; line = $0 ; started = 1 }
+            END { if (started) print line }
           ' CHANGELOG.md > notes.md
           cat notes.md
 
