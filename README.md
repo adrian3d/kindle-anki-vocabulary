@@ -42,7 +42,7 @@ Avec la case « Prononciation », chaque mot (ou flashcard extraite par IA) reç
 voix de synthèse de l'appareil qui affiche la carte. Les enregistrements sont téléchargés une fois puis gardés en
 cache. Le son est joué au recto de la carte mot → traduction et au verso de la carte inverse.
 
-Le son passe par le `.apkg` et le téléphone, pas par le CSV. Les cartes avec son utilisent le type de note
+Le son passe par le `.apkg`, le téléphone et AnkiWeb, pas par le CSV. Les cartes avec son utilisent le type de note
 « Kindle vocabulary (audio) » : les cartes déjà importées avec l'ancien type ne reçoivent pas de son.
 
 ## Sources de traduction
@@ -115,6 +115,9 @@ comparée à une empreinte inscrite dans le plugin.
 
 Le mot de passe n'est pas conservé ; seul le jeton de session l'est. Si AnkiWeb réclame une synchronisation
 complète, qui écraserait un côté, rien n'est envoyé.
+
+Quand des enregistrements sont envoyés, les médias de la collection sont synchronisés aussi. La première fois, la
+copie relais télécharge tous les médias du compte : l'envoi peut alors être long.
 
 ## Données enregistrées
 

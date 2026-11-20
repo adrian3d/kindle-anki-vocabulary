@@ -109,3 +109,35 @@ def test_it_adds_cards_to_a_populated_account_without_forcing_a_full_sync(tmp_pa
     assert device.note_count() == 3
     assert len(device.find_cards('deck:"English vocabulary"')) == 5
     device.close()
+
+
+def test_it_uploads_the_pronunciations_with_the_cards(tmp_path, server):
+    from anki.collection import Collection
+
+    media_dir = tmp_path / 'audio'
+    media_dir.mkdir()
+    (media_dir / 'kindle-en-stench.ogg').write_bytes(b'OggS-stench')
+    package = tmp_path / 'audio.apkg'
+    apkg.write_apkg(package, 'English vocabulary', [
+        apkg.Note('en:stench', 'stench', 'puanteur', lang='en', audio='kindle-en-stench.ogg'),
+        apkg.Note('en:billow', 'billow', 'onduler', lang='en'),
+    ], media_dir=media_dir)
+    computer, account = connect(tmp_path, 'computer', server)
+    steps = []
+
+    computer.export(account, str(package), steps.append, media=True)
+
+    assert steps[-1].startswith('Envoi des prononciations vers AnkiWeb')
+    device = Collection(str(tmp_path / 'device.anki2'))
+    auth = device.sync_login('reader', 'secret', server)
+    device.sync_collection(auth, False)
+    device.close_for_full_sync()
+    device.full_upload_or_download(auth=auth, server_usn=None, upload=False)
+    device.reopen(after_full_sync=True)
+    device.sync_media(auth)
+    while device.media_sync_status().active:
+        time.sleep(0.1)
+    assert (Path(device.media.dir()) / 'kindle-en-stench.ogg').read_bytes() == b'OggS-stench'
+    card = device.get_card(device.find_cards('Word:billow card:1')[0])
+    assert [tag.lang for tag in card.question_av_tags()] == ['en_US']
+    device.close()

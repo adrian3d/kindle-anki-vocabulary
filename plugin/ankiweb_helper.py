@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 
 
 def emit(**message):
@@ -57,6 +58,9 @@ def export(request):
                 'AnkiWeb demande une synchronisation complète, qui écraserait un côté. Rien n\'a été envoyé : '
                 'synchronisez d\'abord vos appareils, puis réessayez.'
             )
+        if request.get('media'):
+            emit(step='Envoi des prononciations vers AnkiWeb…')
+            sync_media(col, auth)
         return {'added': added, 'updated_or_existing': len(request.get('guids', [])) - added, 'endpoint': auth.endpoint,
                 'decks': deck_names(col)}
     finally:
@@ -92,6 +96,17 @@ def synchronize(col, auth):
     if output.required == SyncCollectionResponse.NO_CHANGES:
         return None
     return SyncCollectionResponse.ChangesRequired.Name(output.required)
+
+
+def sync_media(col, auth):
+    col.sync_media(auth)
+    while True:
+        status = col.media_sync_status()
+        if not status.active:
+            return
+        if status.progress.checked:
+            emit(step=f'Envoi des prononciations vers AnkiWeb : {status.progress.checked}')
+        time.sleep(0.5)
 
 
 def full_sync(col, auth, upload):
