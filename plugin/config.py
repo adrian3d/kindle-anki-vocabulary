@@ -3,7 +3,7 @@ import shutil
 import sys
 
 from calibre.utils.config import JSONConfig, config_dir
-from qt.core import QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
+from qt.core import QApplication, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, Qt, QWidget
 
 from calibre_plugins.kindle_vocab_anki import translators
 from calibre_plugins.kindle_vocab_anki.cache import TranslationCache
@@ -127,11 +127,16 @@ class ConfigWidget(QWidget):
 
     def refresh_ollama_models(self):
         current = self.ollama_model.currentText()
+        self.ollama_status.setText('Recherche des modèles…')
+        self.ollama_status.repaint()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             models = translators.list_ollama_models(self.ollama_url.text().strip())
         except translators.TranslationError as error:
             self.ollama_status.setText(str(error))
             return
+        finally:
+            QApplication.restoreOverrideCursor()
         self.ollama_model.clear()
         self.ollama_model.addItems(models)
         self.ollama_model.setCurrentText(current or (models[0] if models else ''))

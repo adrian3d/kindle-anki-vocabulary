@@ -2,12 +2,13 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+from contextlib import contextmanager
 from dataclasses import replace
 
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, info_dialog, question_dialog
 from qt.core import (
     QApplication, QCheckBox, QComboBox, QDate, QDateEdit, QDialog, QDialogButtonBox, QEvent, QHBoxLayout, QHeaderView,
-    QGroupBox, QLabel, QLineEdit, QProgressDialog, QPushButton, QRadioButton, Qt, QTableWidget, QTableWidgetItem, QTabWidget, QThread,
+    QGroupBox, QLabel, QLineEdit, QProgressBar, QProgressDialog, QPushButton, QRadioButton, Qt, QTableWidget, QTableWidgetItem, QTabWidget, QThread,
     QVBoxLayout, QWidget, pyqtSignal,
 )
 
@@ -118,6 +119,15 @@ def make_table(columns, stretch_column):
     table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     table.horizontalHeader().setSectionResizeMode(stretch_column, QHeaderView.ResizeMode.Stretch)
     return table
+
+
+@contextmanager
+def busy_cursor():
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    try:
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
 
 
 def make_cell(text, flags=READ_ONLY):
@@ -247,6 +257,11 @@ class SendDialog(QDialog):
 
         self.progress = QLabel('')
         self.progress.setWordWrap(True)
+        self.busy_bar = QProgressBar()
+        self.busy_bar.setRange(0, 0)
+        self.busy_bar.setMaximumWidth(120)
+        self.busy_bar.setTextVisible(False)
+        self.busy_bar.hide()
         self.send_button = QPushButton('Envoyer')
         self.send_button.setDefault(True)
         self.send_button.clicked.connect(self.send)
@@ -254,6 +269,7 @@ class SendDialog(QDialog):
         close.clicked.connect(self.reject)
         self.buttons = QHBoxLayout()
         self.buttons.addWidget(self.progress, 1)
+        self.buttons.addWidget(self.busy_bar)
         self.buttons.addWidget(self.send_button)
         self.buttons.addWidget(close)
 
@@ -266,14 +282,17 @@ class SendDialog(QDialog):
     def update_state(self):
         self.send_button.setEnabled(self.can_send() and bool(self.chooser.deck_name()) and not self.busy())
 
-    def run(self, task, on_done):
+    def run(self, task, on_done, message='Opération en cours…'):
         self.worker = TaskWorker(task)
         self.worker.step.connect(self.progress.setText)
         self.worker.done.connect(lambda result, error: self.finish(result, error, on_done))
+        self.progress.setText(message)
+        self.busy_bar.show()
         self.worker.start()
         self.update_state()
 
     def finish(self, result, error, on_done):
+        self.busy_bar.hide()
         self.progress.setText(f'Échec : {error}' if error else '')
         if not error:
             on_done(result)
@@ -300,11 +319,11 @@ class PhoneDialog(SendDialog):
         self.connected = False
         self.phone_status = QLabel('')
         self.phone_status.setWordWrap(True)
-        refresh = QPushButton('Actualiser')
-        refresh.clicked.connect(self.load_decks)
+        self.refresh_button = QPushButton('Actualiser')
+        self.refresh_button.clicked.connect(self.load_decks)
         phone_row = QHBoxLayout()
         phone_row.addWidget(self.phone_status, 1)
-        phone_row.addWidget(refresh)
+        phone_row.addWidget(self.refresh_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.summary)
@@ -317,16 +336,33 @@ class PhoneDialog(SendDialog):
     def can_send(self):
         return self.connected
 
+    def update_state(self):
+        super().update_state()
+        self.refresh_button.setEnabled(not self.busy())
+
     def load_decks(self):
-        try:
-            device = phone.connect()
-            decks = device.list_decks()
-        except phone.PhoneError as error:
-            self.connected, decks = False, []
-            self.phone_status.setText(f'Téléphone non disponible. {error}')
+        if self.busy():
+            return
+        self.connected = False
+        self.phone_status.setText('Recherche du téléphone…')
+
+        def task(on_step):
+            try:
+                device = phone.connect()
+                on_step('Lecture des decks d\'AnkiDroid…')
+                return device.serial, device.list_decks(), ''
+            except phone.PhoneError as error:
+                return None, [], str(error)
+
+        self.run(task, self.on_decks, 'Recherche du téléphone…')
+
+    def on_decks(self, result):
+        serial, decks, error = result
+        self.connected = serial is not None
+        if self.connected:
+            self.phone_status.setText(f'Téléphone {serial} connecté, {len(decks)} deck(s) dans AnkiDroid.')
         else:
-            self.connected = True
-            self.phone_status.setText(f'Téléphone {device.serial} connecté, {len(decks)} deck(s) dans AnkiDroid.')
+            self.phone_status.setText(f'Téléphone non disponible. {error}')
         self.chooser.set_decks(decks)
 
     def send(self):
@@ -337,6 +373,7 @@ class PhoneDialog(SendDialog):
                 deck, self.notes, reverse, self.audio, on_step,
                 lambda path, _has_media: phone.connect().send_package(path, on_step)),
             lambda outcome: self.on_sent(deck, outcome),
+            'Préparation du paquet…',
         )
 
     def on_sent(self, deck, outcome):
@@ -386,7 +423,7 @@ class AnkiWebDialog(SendDialog):
 
         self.update_state()
         if prefs['ankiweb_hkey']:
-            self.run(lambda on_step: self.client.list_decks(self.account(), on_step), self.on_decks)
+            self.run(lambda on_step: self.client.list_decks(self.account(), on_step), self.on_decks, 'Connexion à AnkiWeb…')
 
     def account(self):
         return {'hkey': prefs['ankiweb_hkey'], 'endpoint': prefs['ankiweb_endpoint']}
@@ -418,7 +455,7 @@ class AnkiWebDialog(SendDialog):
             account = {'hkey': login['hkey'], 'endpoint': login['endpoint']}
             return username, account, self.client.list_decks(account, on_step)
 
-        self.run(task, self.on_logged_in)
+        self.run(task, self.on_logged_in, 'Connexion à AnkiWeb…')
 
     def on_logged_in(self, result):
         username, account, decks = result
@@ -446,6 +483,7 @@ class AnkiWebDialog(SendDialog):
                 deck, self.notes, reverse, self.audio, on_step,
                 lambda path, has_media: self.client.export(account, path, on_step, has_media)),
             lambda result: self.on_sent(deck, result),
+            'Préparation du paquet…',
         )
 
     def on_sent(self, deck, result):
@@ -557,6 +595,7 @@ class ExportBar(QWidget):
 
 class TranslateWorker(QThread):
     progress = pyqtSignal(int, int)
+    step = pyqtSignal(str)
     done = pyqtSignal(dict, str)
 
     def __init__(self, translator, groups, target, cache):
@@ -569,6 +608,7 @@ class TranslateWorker(QThread):
         total = sum(len(items) for _lang, items in self.groups)
         try:
             for lang, items in self.groups:
+                self.prepare(lang)
                 result.update(translators.translate_all(
                     self.translator, items, lang, self.target, self.cache,
                     lambda done, _total, offset=offset: self.progress.emit(offset + done, total),
@@ -580,6 +620,14 @@ class TranslateWorker(QThread):
         except Exception as exception:
             error = f'Erreur inattendue : {exception}'
         self.done.emit(result, error)
+
+    def prepare(self, lang):
+        dictionary_path = getattr(self.translator, 'dictionary_path', None)
+        if dictionary_path and not os.path.exists(dictionary_path(lang, self.target)):
+            self.step.emit(f'Téléchargement du dictionnaire {translators.language_name(lang)} → '
+                           f'{translators.language_name(self.target)}…')
+            self.translator.download(lang, self.target)
+        self.step.emit('Traduction en cours…')
 
 
 class ExtractWorker(QThread):
@@ -731,8 +779,9 @@ class VocabTab(QWidget):
 
     def load(self, path):
         try:
-            conn = vocab.open_db(path)
-            languages = vocab.list_languages(conn)
+            with busy_cursor():
+                conn = vocab.open_db(path)
+                languages = vocab.list_languages(conn)
         except sqlite3.Error as error:
             error_dialog(self, 'Vocabulaire Kindle', f'Impossible de lire {path} : {error}', show=True)
             return
@@ -858,6 +907,7 @@ class VocabTab(QWidget):
 
         self.worker = TranslateWorker(make_translator(provider), list(groups.items()), target, self.cache)
         self.worker.progress.connect(lambda done, _total: progress.setValue(done))
+        self.worker.step.connect(progress.setLabelText)
         self.worker.done.connect(lambda result, error: self.on_translated(progress, result, error))
         progress.canceled.connect(lambda: setattr(self.worker, 'cancelled', True))
         self.worker.start()
@@ -944,7 +994,7 @@ class HighlightsTab(QWidget):
 
     def load(self, path):
         try:
-            with open(path, encoding='utf-8-sig') as file:
+            with busy_cursor(), open(path, encoding='utf-8-sig') as file:
                 self.passages = clippings.parse(file.read())
         except (OSError, UnicodeDecodeError) as error:
             error_dialog(self, 'Surlignages Kindle', f'Impossible de lire {path} : {error}', show=True)
@@ -1031,7 +1081,11 @@ class HighlightsTab(QWidget):
         self.worker = ExtractWorker(
             make_translator(provider), passages, self.target.currentData(), self.cache, self.refresh_cards.isChecked(),
         )
-        self.worker.progress.connect(lambda done, _total: progress.setValue(done))
+        def on_progress(done, total):
+            progress.setValue(done)
+            progress.setLabelText(f'Analyse des surlignages : {done}/{total} passage(s)…')
+
+        self.worker.progress.connect(on_progress)
         self.worker.done.connect(lambda cards, error: self.on_extracted(progress, cards, error))
         progress.canceled.connect(lambda: setattr(self.worker, 'cancelled', True))
         self.worker.start()
